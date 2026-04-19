@@ -26,7 +26,7 @@ router.get('/stats', authenticate, ensureAuthor, async (req, res, next) => {
 
     const [
       totalArticles,
-      totalViews,
+      totalViewsAggregate,
       totalLikes,
       totalComments,
       followerCount,
@@ -83,6 +83,8 @@ router.get('/stats', authenticate, ensureAuthor, async (req, res, next) => {
         },
       }),
     ]);
+
+    const totalViews = totalViewsAggregate._sum.views ?? 0;
 
     // 最近30天的趋势数据
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);

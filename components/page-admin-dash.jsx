@@ -109,10 +109,21 @@ const PageAdminDashboard = ({ onNav, user }) => {
   }
 
   const s = data && data.stats ? data.stats : {};
-  const totalViews = (s.views && s.views.total && (s.views.total._sum?.views ?? s.views.total)) || 0;
-  const totalLikes = (s.likes && s.likes.total) || 0;
-  const totalArticles = (s.articles && s.articles.total) || 0;
-  const totalFollowers = (s.followers && s.followers.total) || 0;
+  const readMetricTotal = (value) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    if (value && typeof value === 'object') {
+      return readMetricTotal(value.total ?? value._sum?.views ?? value._sum?.count ?? 0);
+    }
+    return 0;
+  };
+  const totalViews = readMetricTotal(s.views && s.views.total);
+  const totalLikes = readMetricTotal(s.likes && s.likes.total);
+  const totalArticles = readMetricTotal(s.articles && s.articles.total);
+  const totalFollowers = readMetricTotal(s.followers && s.followers.total);
 
   const stats = [
     { label: '总阅读', value: totalViews },
