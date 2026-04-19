@@ -1,4 +1,4 @@
-/* global React, Icon, AdminShell, Loading, renderMd */
+/* global React, Icon, AdminShell, Loading, analyzeArticleComposition, renderMd */
 
 // Resize clipboard or local images before uploading to the backend.
 // Keeps longest edge <= maxDim so writing stays lightweight.
@@ -59,46 +59,6 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
   const taRef = React.useRef(null);
   const fileInputRef = React.useRef(null);
 
-  // 自定义光标（带扫尾拖影）
-  const [caret, setCaret] = React.useState({ x: 0, y: 0, h: 25, on: false });
-  const [typing, setTyping] = React.useState(false);
-  const mirrorRef = React.useRef(null);
-  const typingTmrRef = React.useRef(null);
-
-  const pokeTyping = () => {
-    setTyping(true);
-    if (typingTmrRef.current) clearTimeout(typingTmrRef.current);
-    typingTmrRef.current = setTimeout(() => setTyping(false), 650);
-  };
-
-  const updateCaret = React.useCallback(() => {
-    const ta = taRef.current;
-    const mirror = mirrorRef.current;
-    if (!ta || !mirror) return;
-    const cs = window.getComputedStyle(ta);
-    ['fontSize','fontFamily','fontWeight','lineHeight','letterSpacing'].forEach(p => {
-      mirror.style[p] = cs[p];
-    });
-    mirror.style.padding = '0';
-    mirror.style.width = ta.clientWidth + 'px';
-    mirror.style.whiteSpace = 'pre-wrap';
-    mirror.style.wordWrap = 'break-word';
-    mirror.style.overflowWrap = 'break-word';
-
-    const pos = ta.selectionEnd ?? 0;
-    const val = ta.value || '';
-    mirror.textContent = val.slice(0, pos);
-    const span = document.createElement('span');
-    span.textContent = '\u200b';
-    mirror.appendChild(span);
-    mirror.appendChild(document.createTextNode(val.slice(pos) || ' '));
-
-    const x = span.offsetLeft;
-    const y = span.offsetTop;
-    const lh = parseFloat(cs.lineHeight) || 25;
-    setCaret({ x, y, h: lh, on: document.activeElement === ta });
-  }, []);
-
   // Load existing article when editing
   React.useEffect(() => {
     if (!isEdit) return;
@@ -118,33 +78,6 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
       .finally(() => { if (!cancelled) setLoadingArticle(false); });
     return () => { cancelled = true; };
   }, [articleId, isEdit]);
-
-  React.useEffect(() => { updateCaret(); }, [content, updateCaret]);
-
-  React.useEffect(() => {
-    const ta = taRef.current;
-    if (!ta) return;
-    const poke = () => { pokeTyping(); setTimeout(updateCaret, 0); };
-    const onClick = () => setTimeout(updateCaret, 0);
-    const onFocus = () => setTimeout(updateCaret, 0);
-    const onBlur = () => setCaret(c => ({ ...c, on: false }));
-    ta.addEventListener('keyup', poke);
-    ta.addEventListener('keydown', poke);
-    ta.addEventListener('click', onClick);
-    ta.addEventListener('focus', onFocus);
-    ta.addEventListener('blur', onBlur);
-    ta.addEventListener('select', onClick);
-    window.addEventListener('resize', updateCaret);
-    return () => {
-      ta.removeEventListener('keyup', poke);
-      ta.removeEventListener('keydown', poke);
-      ta.removeEventListener('click', onClick);
-      ta.removeEventListener('focus', onFocus);
-      ta.removeEventListener('blur', onBlur);
-      ta.removeEventListener('select', onClick);
-      window.removeEventListener('resize', updateCaret);
-    };
-  }, [updateCaret]);
 
   const wordCount = content.replace(/\s/g,'').length;
   const est = Math.max(1, Math.round(wordCount / 300));
@@ -383,6 +316,11 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
     }
   };
 
+  const previewProfile = React.useMemo(
+    () => analyzeArticleComposition({ title, excerpt, content }),
+    [title, excerpt, content]
+  );
+
   if (loadingArticle) {
     return (
       <AdminShell active="admin-editor" onNav={onNav} user={user}>
@@ -431,11 +369,11 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
             background: 'var(--surface-2)',
           }}>
             {/* Toolbar */}
-              <div style={{
-                display: 'flex', gap: 2, padding: '10px 32px',
-                borderBottom: '1px solid var(--border)',
-                background: 'var(--surface)',
-              }}>
+            <div style={{
+              display: 'flex', gap: 2, padding: '10px 32px',
+              borderBottom: '1px solid var(--border)',
+              background: 'var(--surface)',
+            }}>
               {tools.map(t => (
                 <button key={t.k} onClick={t.a} title={t.title}
                   onMouseEnter={()=>setFocusedTool(t.k)} onMouseLeave={()=>setFocusedTool(null)}
@@ -450,70 +388,70 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
                 </button>
               ))}
               <div style={{ flex: 1 }}/>
-                <div style={{ fontSize: 11, color: 'var(--ink-4)', alignSelf: 'center', paddingRight: 8 }}>
-                  Markdown · 实时预览
+              <div style={{ fontSize: 11, color: 'var(--ink-4)', alignSelf: 'center', paddingRight: 8 }}>
+                Markdown · 实时预览
+              </div>
+            </div>
+            {imagePanelOpen && (
+              <div style={{
+                padding: '18px 32px',
+                borderBottom: '1px solid var(--border)',
+                background: 'rgba(253, 251, 246, 0.8)',
+                display: 'grid',
+                gridTemplateColumns: '1fr auto',
+                gap: 16,
+                alignItems: 'end',
+              }}>
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div>
+                    <div style={{ fontFamily: 'var(--serif)', fontSize: 18, marginBottom: 6 }}>插入图片</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
+                      支持外链、拖拽、粘贴截图或直接上传。正文里只会写入图片 URL，不再塞入 Base64。
+                    </div>
+                  </div>
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>图片地址</span>
+                    <input
+                      value={imageUrlInput}
+                      onChange={(e)=>setImageUrlInput(e.target.value)}
+                      placeholder="https://example.com/cover.jpg"
+                      style={{
+                        width: '100%',
+                        padding: 12,
+                        borderRadius: 12,
+                        border: '1px solid var(--border)',
+                        background: 'var(--surface)',
+                        outline: 'none',
+                      }}/>
+                  </label>
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>替代文字（可选）</span>
+                    <input
+                      value={imageAltInput}
+                      onChange={(e)=>setImageAltInput(e.target.value)}
+                      placeholder="例如：书桌上的钢笔与便笺"
+                      style={{
+                        width: '100%',
+                        padding: 12,
+                        borderRadius: 12,
+                        border: '1px solid var(--border)',
+                        background: 'var(--surface)',
+                        outline: 'none',
+                      }}/>
+                  </label>
+                </div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onPickImageFile} style={{ display: 'none' }}/>
+                  <button className="btn" disabled={uploadingImage} onClick={()=>fileInputRef.current && fileInputRef.current.click()}>
+                    {uploadingImage ? '上传中…' : '选择图片'}
+                  </button>
+                  <button className="btn btn-primary" onClick={onInsertImageUrl} disabled={!imageUrlInput.trim()}>
+                    插入外链
+                  </button>
                 </div>
               </div>
-              {imagePanelOpen && (
-                <div style={{
-                  padding: '18px 32px',
-                  borderBottom: '1px solid var(--border)',
-                  background: 'rgba(253, 251, 246, 0.8)',
-                  display: 'grid',
-                  gridTemplateColumns: '1fr auto',
-                  gap: 16,
-                  alignItems: 'end',
-                }}>
-                  <div style={{ display: 'grid', gap: 12 }}>
-                    <div>
-                      <div style={{ fontFamily: 'var(--serif)', fontSize: 18, marginBottom: 6 }}>插入图片</div>
-                      <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
-                        支持外链、拖拽、粘贴截图或直接上传。正文里只会写入图片 URL，不再塞入 Base64。
-                      </div>
-                    </div>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>图片地址</span>
-                      <input
-                        value={imageUrlInput}
-                        onChange={(e)=>setImageUrlInput(e.target.value)}
-                        placeholder="https://example.com/cover.jpg"
-                        style={{
-                          width: '100%',
-                          padding: 12,
-                          borderRadius: 12,
-                          border: '1px solid var(--border)',
-                          background: 'var(--surface)',
-                          outline: 'none',
-                        }}/>
-                    </label>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>替代文字（可选）</span>
-                      <input
-                        value={imageAltInput}
-                        onChange={(e)=>setImageAltInput(e.target.value)}
-                        placeholder="例如：书桌上的钢笔与便笺"
-                        style={{
-                          width: '100%',
-                          padding: 12,
-                          borderRadius: 12,
-                          border: '1px solid var(--border)',
-                          background: 'var(--surface)',
-                          outline: 'none',
-                        }}/>
-                    </label>
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onPickImageFile} style={{ display: 'none' }}/>
-                    <button className="btn" disabled={uploadingImage} onClick={()=>fileInputRef.current && fileInputRef.current.click()}>
-                      {uploadingImage ? '上传中…' : '选择图片'}
-                    </button>
-                    <button className="btn btn-primary" onClick={onInsertImageUrl} disabled={!imageUrlInput.trim()}>
-                      插入外链
-                    </button>
-                  </div>
-                </div>
-              )}
-              <div style={{ padding: '40px 64px', overflowY: 'auto', flex: 1 }}>
+            )}
+            <div style={{ padding: '40px 64px', overflowY: 'auto', flex: 1 }}>
                 <input
                   value={title} onChange={e=>setTitle(e.target.value)}
                 placeholder="一个可以说一整晚的标题…"
@@ -582,11 +520,12 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
                   value={content} onChange={e=>setContent(e.target.value)}
                   onPaste={onContentPaste}
                   placeholder="从一个清澈的句子开始…（支持拖拽、粘贴、上传图片）"
-                  className="editor-ta-hide-caret"
+                  className="editor-ta"
                   style={{
                     width: '100%', minHeight: 400, border: 'none', outline: 'none', resize: 'none',
                     background: 'transparent', fontFamily: 'var(--mono)', fontSize: 14,
                     lineHeight: 1.8, color: 'var(--ink-2)',
+                    caretColor: 'var(--accent)',
                   }}/>
                 {dragActive && (
                   <div style={{
@@ -605,101 +544,41 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
                     松开以上传并插入图片
                   </div>
                 )}
-                {/* Mirror div for caret position measurement */}
-                <div ref={mirrorRef} aria-hidden="true" style={{
-                  position: 'absolute', top: 0, left: 0,
-                  visibility: 'hidden', pointerEvents: 'none',
-                  whiteSpace: 'pre-wrap', wordWrap: 'break-word',
-                }}/>
-                {/* Custom ink caret with trailing wash */}
-                {caret.on && (
-                  <div style={{
-                    position: 'absolute',
-                    left: caret.x,
-                    top: caret.y,
-                    pointerEvents: 'none',
-                    zIndex: 2,
-                  }}>
-                    {/* Trailing wash — a soft gradient that bleeds downward
-                        when typing, like ink soaking into paper */}
-                    <div className="ink-trail" style={{
-                      position: 'absolute',
-                      left: -3,
-                      top: 0,
-                      width: 8,
-                      height: caret.h * 2.5,
-                      borderRadius: '0 0 4px 4px',
-                      background: `linear-gradient(to bottom, var(--accent-soft) 0%, var(--accent-wash) 40%, transparent 100%)`,
-                      opacity: typing ? 0.55 : 0,
-                      transform: typing ? `scaleY(1) translateY(${caret.h * 0.15}px)` : `scaleY(0.3) translateY(0px)`,
-                      transformOrigin: 'top center',
-                      transition: typing
-                        ? 'opacity 0.12s ease-out, transform 0.18s ease-out'
-                        : 'opacity 0.8s ease-in, transform 0.9s ease-in',
-                      filter: 'blur(2px)',
-                    }}/>
-                    {/* Secondary softer wash — wider, more diffuse */}
-                    <div style={{
-                      position: 'absolute',
-                      left: -6,
-                      top: 0,
-                      width: 14,
-                      height: caret.h * 1.8,
-                      borderRadius: '0 0 6px 6px',
-                      background: `radial-gradient(ellipse at top center, var(--accent-wash) 0%, transparent 70%)`,
-                      opacity: typing ? 0.35 : 0,
-                      transform: typing ? 'scaleY(1)' : 'scaleY(0.2)',
-                      transformOrigin: 'top center',
-                      transition: typing
-                        ? 'opacity 0.15s ease-out, transform 0.2s ease-out'
-                        : 'opacity 1s ease-in, transform 1.1s ease-in',
-                      filter: 'blur(4px)',
-                    }}/>
-                    {/* Main caret line — slim, with soft glow */}
-                    <div className={typing ? 'ink-caret ink-caret--typing' : 'ink-caret'} style={{
-                      position: 'relative',
-                      width: 1.5,
-                      height: caret.h,
-                      borderRadius: 1,
-                      background: 'var(--accent)',
-                    }}/>
-                  </div>
-                )}
+
               </div>
             </div>
           </div>
 
           {/* Preview pane */}
-          <div style={{ padding: '56px 64px', overflowY: 'auto', background: 'var(--paper)' }}>
-            <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--accent)', fontSize: 13, marginBottom: 10 }}>
-              — 实时预览 · Live preview
+          <div
+            className="preview-stage reading-stage"
+            data-reading-profile={previewProfile.shape}
+            style={{ padding: 'clamp(28px, 4vw, 56px) clamp(20px, 5vw, 64px)', overflowY: 'auto', background: 'var(--paper)' }}>
+            <div className="reading-shell">
+              <div className="reading-header">
+                <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--accent)', fontSize: 13, marginBottom: 10 }}>
+                  — 实时预览 · Live preview
+                </div>
+                <h1 className="reading-title">{title || '（未命名）'}</h1>
+                {titleEn && (
+                  <div className="reading-subtitle">— {titleEn}</div>
+                )}
+                {excerpt && (
+                  <div style={{
+                    maxWidth: 'var(--reading-inline)',
+                    color: 'var(--ink-3)',
+                    fontSize: 14,
+                    lineHeight: 1.75,
+                    marginTop: titleEn ? -12 : 0,
+                  }}>
+                    {excerpt}
+                  </div>
+                )}
+              </div>
+              <div className="md-preview article-prose"
+                dangerouslySetInnerHTML={{ __html: renderMd(content) }}/>
             </div>
-            <h1 style={{ fontFamily: 'var(--serif)', fontSize: 40, marginBottom: 6, lineHeight: 1.2, letterSpacing: '-0.02em' }}>{title || '（未命名）'}</h1>
-            {titleEn && (
-              <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-3)', fontSize: 18, marginBottom: 24 }}>— {titleEn}</div>
-            )}
-            <div className="md-preview"
-              style={{ fontFamily: 'var(--serif)', fontSize: 18, lineHeight: 1.85, color: 'var(--ink-2)' }}
-              dangerouslySetInnerHTML={{ __html: renderMd(content) }}/>
             <style>{`
-              .md-preview p { margin: 0 0 20px; }
-              .md-preview h2 { font-size: 28px; margin: 36px 0 14px; color: var(--ink); font-weight: 500; letter-spacing: -0.01em; }
-              .md-preview h3 { font-size: 22px; margin: 28px 0 10px; color: var(--ink); font-weight: 500; }
-              .md-preview blockquote { margin: 28px 0; padding: 16px 24px; border-left: 3px solid var(--accent); background: var(--accent-wash); font-style: italic; border-radius: 0 8px 8px 0; }
-              .md-preview strong { color: var(--ink); font-weight: 600; }
-              .md-preview em { color: var(--ink); }
-              .md-preview code { background: var(--paper-2); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; color: var(--accent-deep); font-family: var(--mono); }
-              .md-preview a { color: var(--accent); border-bottom: 1px solid currentColor; }
-              .md-preview h1 { font-size: 32px; margin: 40px 0 16px; color: var(--ink); font-weight: 500; letter-spacing: -0.01em; }
-              .md-preview hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
-              .md-preview ul, .md-preview ol { margin: 0 0 20px; padding-left: 1.6em; }
-              .md-preview li { margin: 4px 0; }
-              .md-preview .md-center { margin: 28px 0; text-align: center; color: var(--ink); }
-              .md-preview .md-fig { margin: 28px 0; text-align: center; }
-              .md-preview .md-fig img { display: block; margin: 0 auto; max-width: 100%; max-height: 480px; height: auto; width: auto; object-fit: contain; border-radius: 10px; box-shadow: 0 2px 14px rgba(20,20,20,0.08); background: var(--paper-2); }
-              .md-preview .md-fig figcaption { margin-top: 8px; font-family: var(--serif); font-style: italic; font-size: 12px; color: var(--ink-4); }
-              .md-preview p img { display: inline-block; max-width: 100%; max-height: 1.4em; vertical-align: middle; border-radius: 4px; }
-
               /* ── Custom ink caret ── */
               .editor-ta-hide-caret { caret-color: transparent; }
 
