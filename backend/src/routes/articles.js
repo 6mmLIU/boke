@@ -19,6 +19,31 @@ const createArticleSchema = z.object({
 });
 
 const updateArticleSchema = createArticleSchema.partial();
+const ARTICLE_CARD_SELECT = {
+  id: true,
+  title: true,
+  titleEn: true,
+  excerpt: true,
+  cover: true,
+  tags: true,
+  views: true,
+  readTime: true,
+  createdAt: true,
+  author: {
+    select: {
+      id: true,
+      name: true,
+      handle: true,
+      avatar: true,
+    },
+  },
+  _count: {
+    select: {
+      likes: true,
+      comments: true,
+    },
+  },
+};
 
 // 获取文章列表
 router.get('/', optionalAuth, async (req, res, next) => {
@@ -92,31 +117,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
         skip,
         take: limitNum,
         orderBy,
-        select: {
-          id: true,
-          title: true,
-          titleEn: true,
-          excerpt: true,
-          cover: true,
-          tags: true,
-          views: true,
-          readTime: true,
-          createdAt: true,
-          author: {
-            select: {
-              id: true,
-              name: true,
-              handle: true,
-              avatar: true,
-            },
-          },
-          _count: {
-            select: {
-              likes: true,
-              comments: true,
-            },
-          },
-        },
+        select: ARTICLE_CARD_SELECT,
       }),
       prisma.article.count({ where }),
     ]);
@@ -206,16 +207,28 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
 
     // 检查用户是否点赞
     let userLiked = false;
+    let userBookmarked = false;
     if (req.user) {
-      const like = await prisma.like.findUnique({
-        where: {
-          authorId_articleId: {
-            authorId: req.user.id,
-            articleId: article.id,
+      const [like, bookmark] = await Promise.all([
+        prisma.like.findUnique({
+          where: {
+            authorId_articleId: {
+              authorId: req.user.id,
+              articleId: article.id,
+            },
           },
-        },
-      });
+        }),
+        prisma.bookmark.findUnique({
+          where: {
+            userId_articleId: {
+              userId: req.user.id,
+              articleId: article.id,
+            },
+          },
+        }),
+      ]);
       userLiked = !!like;
+      userBookmarked = !!bookmark;
     }
 
     // 检查是否关注作者
@@ -238,6 +251,7 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
       likes: article._count.likes,
       comments: article._count.comments,
       userLiked,
+      userBookmarked,
       isFollowing,
       author: {
         ...article.author,
@@ -350,6 +364,79 @@ router.put('/:id', authenticate, async (req, res, next) => {
         details: error.errors,
       });
     }
+    next(error);
+  }
+});
+
+// 收藏文章
+router.post('/:id/bookmark', authenticate, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const article = await prisma.article.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!article) {
+      return res.status(404).json({ error: '文章不存在' });
+    }
+
+    const existingBookmark = await prisma.bookmark.findUnique({
+      where: {
+        userId_articleId: {
+          userId: req.user.id,
+          articleId: id,
+        },
+      },
+    });
+
+    if (existingBookmark) {
+      return res.status(409).json({ error: '已经收藏过这篇文章' });
+    }
+
+    await prisma.bookmark.create({
+      data: {
+        userId: req.user.id,
+        articleId: id,
+      },
+    });
+
+    res.json({ message: '收藏成功', bookmarked: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 取消收藏
+router.delete('/:id/bookmark', authenticate, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const existingBookmark = await prisma.bookmark.findUnique({
+      where: {
+        userId_articleId: {
+          userId: req.user.id,
+          articleId: id,
+        },
+      },
+    });
+
+    if (!existingBookmark) {
+      return res.status(404).json({ error: '未收藏过这篇文章' });
+    }
+
+    await prisma.bookmark.delete({
+      where: {
+        userId_articleId: {
+          userId: req.user.id,
+          articleId: id,
+        },
+      },
+    });
+
+    res.json({ message: '已取消收藏', bookmarked: false });
+  } catch (error) {
     next(error);
   }
 });

@@ -141,6 +141,8 @@
     delete: (id) => request(`/api/articles/${id}`, { method: 'DELETE' }),
     like: (id) => request(`/api/articles/${id}/like`, { method: 'POST' }),
     unlike: (id) => request(`/api/articles/${id}/like`, { method: 'DELETE' }),
+    bookmark: (id) => request(`/api/articles/${id}/bookmark`, { method: 'POST' }),
+    unbookmark: (id) => request(`/api/articles/${id}/bookmark`, { method: 'DELETE' }),
   };
 
   // ────── 评论 ──────
@@ -156,6 +158,7 @@
     get: (handle) => request(`/api/users/${encodeURIComponent(handle)}`),
     updateProfile: (payload) => request('/api/users/me/profile', { method: 'PATCH', body: payload }),
     updateHandle: (handle) => request('/api/users/me/handle', { method: 'PATCH', body: { handle } }),
+    bookmarks: () => request('/api/users/me/bookmarks'),
   };
 
   const Uploads = {

@@ -13,6 +13,31 @@ const {
 
 const router = express.Router();
 const prisma = new PrismaClient();
+const ARTICLE_CARD_SELECT = {
+  id: true,
+  title: true,
+  titleEn: true,
+  excerpt: true,
+  cover: true,
+  tags: true,
+  views: true,
+  readTime: true,
+  createdAt: true,
+  author: {
+    select: {
+      id: true,
+      name: true,
+      handle: true,
+      avatar: true,
+    },
+  },
+  _count: {
+    select: {
+      likes: true,
+      comments: true,
+    },
+  },
+};
 
 const updateProfileSchema = z.object({
   name: z.string().trim().min(2, '笔名至少需要2个字符').max(50, '笔名不能超过50个字符').optional(),
@@ -87,6 +112,34 @@ router.patch('/me/handle', authenticate, async (req, res, next) => {
   }
 });
 
+router.get('/me/bookmarks', authenticate, async (req, res, next) => {
+  try {
+    const bookmarks = await prisma.bookmark.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: {
+        createdAt: true,
+        article: {
+          select: ARTICLE_CARD_SELECT,
+        },
+      },
+    });
+
+    res.json({
+      articles: bookmarks.map(({ createdAt, article }) => ({
+        ...article,
+        bookmarkedAt: createdAt,
+        likes: article._count.likes,
+        comments: article._count.comments,
+        _count: undefined,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/:handle', async (req, res, next) => {
   try {
     const requestedHandle = normalizeHandle(req.params.handle);
@@ -104,31 +157,7 @@ router.get('/:handle', async (req, res, next) => {
         where: { authorId: author.id },
         orderBy: { createdAt: 'desc' },
         take: 50,
-        select: {
-          id: true,
-          title: true,
-          titleEn: true,
-          excerpt: true,
-          cover: true,
-          tags: true,
-          views: true,
-          readTime: true,
-          createdAt: true,
-          author: {
-            select: {
-              id: true,
-              name: true,
-              handle: true,
-              avatar: true,
-            },
-          },
-          _count: {
-            select: {
-              likes: true,
-              comments: true,
-            },
-          },
-        },
+        select: ARTICLE_CARD_SELECT,
       }),
       prisma.article.aggregate({
         where: { authorId: author.id },

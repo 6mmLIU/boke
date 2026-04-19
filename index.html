@@ -62,6 +62,15 @@
       const [currentArticleId, setCurrentArticleId] = useState(initialRoute.articleId);
       const [currentAuthorHandle, setCurrentAuthorHandle] = useState(initialRoute.authorHandle);
       const [authedUser, setAuthedUser] = useState(() => window.Auth?.user || null);
+      const [tweaks, setTweaks] = useState(() => {
+        try {
+          const raw = localStorage.getItem('inkwell.tweaks');
+          return raw ? { ...DEFAULT_THEME, ...JSON.parse(raw) } : DEFAULT_THEME;
+        } catch {
+          return DEFAULT_THEME;
+        }
+      });
+      const [tweaksOpen, setTweaksOpen] = useState(false);
 
       const setPage = (next, value) => {
         if (next === 'article') {
@@ -103,12 +112,13 @@
 
       useEffect(() => {
         const root = document.documentElement;
-        root.setAttribute('data-theme', DEFAULT_THEME.theme);
-        root.setAttribute('data-font', DEFAULT_THEME.font);
-        root.setAttribute('data-accent', '');
-        root.setAttribute('data-density', DEFAULT_THEME.density);
-        root.setAttribute('data-texture', DEFAULT_THEME.texture);
-      }, []);
+        root.setAttribute('data-theme', tweaks.theme);
+        root.setAttribute('data-font', tweaks.font);
+        root.setAttribute('data-accent', tweaks.accent === 'terracotta' ? '' : tweaks.accent);
+        root.setAttribute('data-density', tweaks.density);
+        root.setAttribute('data-texture', tweaks.texture);
+        try { localStorage.setItem('inkwell.tweaks', JSON.stringify(tweaks)); } catch {}
+      }, [tweaks]);
 
       useEffect(() => {
         try {
@@ -128,9 +138,13 @@
         window.scrollTo(0, 0);
       }, [page, currentArticleId, currentAuthorHandle]);
 
+      const setPart = (patch) => {
+        setTweaks((prev) => ({ ...prev, ...patch }));
+      };
+
       const pages = {
         auth: <PageAuth onNav={setPage}/>,
-        home: <PageHome onNav={setPage} tweaks={DEFAULT_THEME} user={authedUser}/>,
+        home: <PageHome onNav={setPage} tweaks={tweaks} user={authedUser}/>,
         article: <PageArticle onNav={setPage} articleId={currentArticleId} user={authedUser}/>,
         ranking: <PageRanking onNav={setPage} user={authedUser}/>,
         profile: <PageProfile onNav={setPage} user={authedUser}/>,
@@ -147,12 +161,26 @@
           <PageTransition pageKey={page}>
             {pages[page] || pages.home}
           </PageTransition>
-          <FloatingDock page={page} user={authedUser} setPage={setPage}/>
+          <FloatingDock
+            page={page}
+            user={authedUser}
+            setPage={setPage}
+            tweaksOpen={tweaksOpen}
+            openTweaks={() => setTweaksOpen((v) => !v)}
+          />
+          {tweaksOpen && (
+            <TweaksPanel
+              state={tweaks}
+              set={setPart}
+              visible
+              onClose={() => setTweaksOpen(false)}
+            />
+          )}
         </div>
       );
     }
 
-    function FloatingDock({ page, user, setPage }) {
+    function FloatingDock({ page, user, setPage, tweaksOpen, openTweaks }) {
       const dockRef = useRef(null);
       const dragRef = useRef(null);
       const [open, setOpen] = useState(false);
@@ -171,18 +199,16 @@
           { k: 'home', l: '首页', le: 'Home' },
           { k: 'ranking', l: '榜单', le: 'Rank' },
           { k: 'profile', l: '书房', le: 'Study' },
-          { k: 'author', l: '主页', le: 'Author', payload: user.handle },
-          { k: 'admin', l: '创作台', le: 'Studio' },
-          { k: 'admin-articles', l: '文章', le: 'Posts' },
+          { k: 'author', l: '主页', le: 'Profile', payload: user.handle },
+          { k: 'admin', l: '后台', le: 'Studio' },
+          { k: 'admin-articles', l: '管理', le: 'Posts' },
           { k: 'admin-editor', l: '写作', le: 'Write', payload: null },
         ] : [
+          { k: 'auth', l: '登录', le: 'Auth' },
           { k: 'home', l: '首页', le: 'Home' },
           { k: 'ranking', l: '榜单', le: 'Rank' },
-          { k: 'auth', l: '登录', le: 'Auth' },
         ];
-        if (user && user.role === 'ADMIN') {
-          base.push({ k: 'admin-users', l: '平台', le: 'Admin' });
-        }
+        if (user && user.role === 'ADMIN') base.push({ k: 'admin-users', l: '平台', le: 'Admin' });
         return base;
       }, [user]);
 
@@ -205,8 +231,8 @@
       useEffect(() => {
         const clamp = (next) => {
           const rect = dockRef.current?.getBoundingClientRect();
-          const width = rect?.width || 260;
-          const height = rect?.height || 52;
+          const width = rect?.width || 240;
+          const height = rect?.height || 50;
           return {
             x: Math.min(Math.max(12, next.x), window.innerWidth - width - 12),
             y: Math.min(Math.max(12, next.y), window.innerHeight - height - 12),
@@ -257,82 +283,102 @@
       return (
         <>
           {open && (
-            <div onClick={()=>setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 70 }}/>
+            <div onClick={()=>setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'transparent' }}/>
           )}
           <div
-            ref={dockRef}
-            onMouseEnter={()=>setHover(true)}
-            onMouseLeave={()=>setHover(false)}
             style={{
               position: 'fixed',
               left: position.x,
               top: position.y,
               zIndex: 80,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-end',
-              gap: 10,
             }}>
             <div style={{
-              minWidth: 220,
-              padding: 8,
-              display: 'grid',
+              position: 'absolute',
+              right: 0,
+              bottom: 'calc(100% + 10px)',
+              display: 'flex',
               gap: 4,
-              background: 'rgba(253, 251, 246, 0.9)',
-              backdropFilter: 'blur(18px) saturate(1.15)',
-              WebkitBackdropFilter: 'blur(18px) saturate(1.15)',
+              padding: 6,
+              background: 'rgba(253, 251, 246, 0.86)',
+              backdropFilter: 'blur(16px) saturate(1.2)',
+              WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
               border: '1px solid var(--border)',
-              borderRadius: 24,
-              boxShadow: '0 14px 42px rgba(42,38,34,0.12), 0 4px 12px rgba(42,38,34,0.06)',
+              borderRadius: 999,
+              boxShadow: '0 10px 40px rgba(42,38,34,0.10), 0 2px 6px rgba(42,38,34,0.04)',
               opacity: open ? 1 : 0,
               transform: open ? 'translateY(0) scale(1)' : 'translateY(8px) scale(0.96)',
               transformOrigin: '100% 100%',
               pointerEvents: open ? 'auto' : 'none',
-              transition: 'opacity 260ms var(--ease-out), transform 300ms var(--ease-spring)',
+              transition: 'opacity 280ms var(--ease-out), transform 320ms var(--ease-spring)',
+              whiteSpace: 'nowrap',
             }}>
-              {items.map((item) => {
+              {items.map((item, index) => {
                 const active = item.k === page;
                 return (
                   <button
                     key={item.k}
                     onClick={() => { setPage(item.k, item.payload); setOpen(false); }}
                     style={{
-                      display: 'flex',
-                      alignItems: 'baseline',
-                      gap: 8,
-                      width: '100%',
-                      padding: '10px 14px',
-                      border: 'none',
-                      borderRadius: 16,
+                      padding: '7px 14px',
                       background: active ? 'var(--ink)' : 'transparent',
                       color: active ? 'var(--paper)' : 'var(--ink-3)',
-                      textAlign: 'left',
+                      border: 'none',
+                      borderRadius: 999,
                       cursor: 'pointer',
                       fontFamily: 'inherit',
-                      fontSize: 13,
+                      fontSize: 12,
+                      fontWeight: active ? 500 : 400,
+                      display: 'inline-flex',
+                      alignItems: 'baseline',
+                      gap: 5,
+                      opacity: open ? 1 : 0,
+                      transform: open ? 'translateY(0)' : 'translateY(4px)',
+                      transition: `all var(--d-fast) var(--ease-out), opacity 240ms ease, transform 280ms var(--ease-spring)`,
+                      transitionDelay: open ? `${index * 22}ms` : '0ms',
                     }}>
-                    <span style={{ fontWeight: 600 }}>{item.l}</span>
-                    <span style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 11, opacity: 0.7 }}>{item.le}</span>
+                    {item.l}
+                    <span style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 10, opacity: 0.55 }}>{item.le}</span>
                   </button>
                 );
               })}
+              <div style={{ width: 1, background: 'var(--border)', margin: '4px 4px' }}/>
+              <button
+                onClick={() => { setPage('about'); setOpen(false); }}
+                style={{
+                  padding: '7px 12px',
+                  background: page === 'about' ? 'var(--accent-wash)' : 'transparent',
+                  color: page === 'about' ? 'var(--accent-deep)' : 'var(--accent)',
+                  border: 'none',
+                  borderRadius: 999,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  fontSize: 12,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                }}>
+                关于
+              </button>
             </div>
 
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 2,
-              padding: 4,
-              background: 'rgba(253, 251, 246, 0.84)',
-              backdropFilter: 'blur(18px) saturate(1.15)',
-              WebkitBackdropFilter: 'blur(18px) saturate(1.15)',
-              border: '1px solid var(--border)',
-              borderRadius: 999,
-              boxShadow: hover
-                ? '0 10px 28px rgba(42,38,34,0.14), 0 2px 8px rgba(42,38,34,0.05)'
-                : '0 4px 14px rgba(42,38,34,0.08), 0 1px 3px rgba(42,38,34,0.03)',
-              transition: 'box-shadow var(--d-base) var(--ease-out)',
-            }}>
+            <div
+              ref={dockRef}
+              onMouseEnter={()=>setHover(true)}
+              onMouseLeave={()=>setHover(false)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+                padding: 4,
+                background: 'rgba(253, 251, 246, 0.82)',
+                backdropFilter: 'blur(16px) saturate(1.2)',
+                WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
+                border: '1px solid var(--border)',
+                borderRadius: 999,
+                boxShadow: hover
+                  ? '0 8px 28px rgba(42,38,34,0.12), 0 2px 6px rgba(42,38,34,0.05)'
+                  : '0 2px 10px rgba(42,38,34,0.06), 0 1px 2px rgba(42,38,34,0.03)',
+                transition: 'box-shadow var(--d-base) var(--ease-out)',
+              }}>
               <button
                 onPointerDown={onGripDown}
                 title="拖拽移动"
@@ -340,71 +386,82 @@
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  width: 34,
-                  height: 34,
+                  width: 30,
+                  height: 30,
                   border: 'none',
                   borderRadius: 999,
                   background: 'transparent',
                   cursor: 'grab',
                 }}>
-                <span style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(2, 4px)',
-                  gap: 4,
-                }}>
+                <span style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 3px)', gap: 4 }}>
                   {[0, 1, 2, 3, 4, 5].map((dot) => (
-                    <span key={dot} style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--ink-4)' }}/>
+                    <span key={dot} style={{ width: 3, height: 3, borderRadius: '50%', background: 'var(--ink-4)' }}/>
                   ))}
                 </span>
               </button>
 
-              <div style={{ width: 1, height: 18, background: 'var(--border)' }}/>
-
               <button
-                onClick={() => setOpen((prev) => !prev)}
+                onClick={()=>setOpen((v)=>!v)}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 8,
-                  padding: '8px 14px 8px 12px',
+                  padding: '7px 14px 7px 12px',
                   background: open ? 'var(--paper-2)' : 'transparent',
                   border: 'none',
                   borderRadius: 999,
                   cursor: 'pointer',
                   fontFamily: 'inherit',
-                  fontSize: 13,
+                  fontSize: 12,
                   color: 'var(--ink-2)',
                 }}>
                 <span style={{
-                  width: 7,
-                  height: 7,
+                  width: 6,
+                  height: 6,
                   borderRadius: '50%',
                   background: 'var(--accent)',
-                  boxShadow: '0 0 0 4px var(--accent-wash)',
+                  boxShadow: '0 0 0 3px var(--accent-wash)',
                 }}/>
-                <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{current.l}</span>
+                <span style={{ fontWeight: 500, color: 'var(--ink)' }}>{current.l}</span>
                 <span style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-4)', fontSize: 11 }}>{current.le}</span>
+                <span style={{
+                  display: 'inline-flex',
+                  marginLeft: 2,
+                  color: 'var(--ink-4)',
+                  transition: 'transform 280ms var(--ease-spring)',
+                  transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+                }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 15l-6-6-6 6"/>
+                  </svg>
+                </span>
               </button>
 
-              <div style={{ width: 1, height: 18, background: 'var(--border)' }}/>
+              <div style={{ width: 1, height: 16, background: 'var(--border)' }}/>
 
               <button
-                onClick={() => { setPage('about'); setOpen(false); }}
+                onClick={openTweaks}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
-                  padding: '8px 14px',
-                  background: page === 'about' ? 'var(--accent-wash)' : 'transparent',
-                  color: page === 'about' ? 'var(--accent-deep)' : 'var(--ink-3)',
+                  padding: '7px 12px',
+                  background: tweaksOpen ? 'var(--accent-wash)' : 'transparent',
+                  color: tweaksOpen ? 'var(--accent-deep)' : 'var(--ink-3)',
                   border: 'none',
                   borderRadius: 999,
                   cursor: 'pointer',
                   fontFamily: 'inherit',
-                  fontSize: 13,
+                  fontSize: 12,
                 }}>
-                <Icon name="doc" size={14}/>
-                关于
+                <span style={{
+                  display: 'inline-flex',
+                  transition: 'transform 420ms var(--ease-spring)',
+                  transform: tweaksOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                }}>
+                  <Icon name="settings" size={13}/>
+                </span>
+                调校
               </button>
             </div>
           </div>

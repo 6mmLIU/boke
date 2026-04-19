@@ -3,8 +3,12 @@
 const PageProfile = ({ onNav, user }) => {
   const [tab, setTab] = React.useState('articles');
   const [articles, setArticles] = React.useState([]);
+  const [bookmarks, setBookmarks] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
+  const [loadingBookmarks, setLoadingBookmarks] = React.useState(true);
   const [error, setError] = React.useState('');
+  const [articlesError, setArticlesError] = React.useState('');
+  const [bookmarksError, setBookmarksError] = React.useState('');
   const [profileDraft, setProfileDraft] = React.useState({ name: '', bio: '' });
   const [handleDraft, setHandleDraft] = React.useState('');
   const [savingProfile, setSavingProfile] = React.useState(false);
@@ -28,7 +32,7 @@ const PageProfile = ({ onNav, user }) => {
     if (!user) { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
-    setError('');
+    setArticlesError('');
     window.API.Articles.list({ author: user.handle, limit: 50 })
       .then((res) => {
         if (cancelled) return;
@@ -36,11 +40,29 @@ const PageProfile = ({ onNav, user }) => {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err.message || '加载失败');
+        setArticlesError(err.message || '加载失败');
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [user && user.handle]);
+
+  React.useEffect(() => {
+    if (!user) { setLoadingBookmarks(false); return; }
+    let cancelled = false;
+    setLoadingBookmarks(true);
+    setBookmarksError('');
+    window.API.Users.bookmarks()
+      .then((res) => {
+        if (cancelled) return;
+        setBookmarks((res.articles || []).map(adaptArticle));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setBookmarksError(err.message || '加载失败');
+      })
+      .finally(() => { if (!cancelled) setLoadingBookmarks(false); });
+    return () => { cancelled = true; };
+  }, [user && user.id]);
 
   if (!user) {
     return (
@@ -66,6 +88,7 @@ const PageProfile = ({ onNav, user }) => {
   ];
   const tabs = [
     { k: 'articles', l: '文章', le: 'Articles', c: articles.length },
+    { k: 'bookmarks', l: '收藏', le: 'Bookmarks', c: bookmarks.length },
     { k: 'about', l: '资料', le: 'Profile' },
   ];
 
@@ -196,8 +219,8 @@ const PageProfile = ({ onNav, user }) => {
         {tab === 'articles' && (
           loading ? (
             <Loading label="读取你的文章…"/>
-          ) : error ? (
-            <EmptyState icon="x" title="加载失败" subtitle={error}/>
+          ) : articlesError ? (
+            <EmptyState icon="x" title="加载失败" subtitle={articlesError}/>
           ) : articles.length === 0 ? (
             <EmptyState
               icon="feather"
@@ -208,6 +231,33 @@ const PageProfile = ({ onNav, user }) => {
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
               {articles.map((article, index) => (
+                <ArticleCard
+                  key={article.id}
+                  article={article}
+                  onOpen={(id)=>onNav('article', id)}
+                  onOpenAuthor={(handle)=>onNav('author', handle)}
+                  delay={index * 60}
+                />
+              ))}
+            </div>
+          )
+        )}
+
+        {tab === 'bookmarks' && (
+          loadingBookmarks ? (
+            <Loading label="读取你的收藏…"/>
+          ) : bookmarksError ? (
+            <EmptyState icon="x" title="加载失败" subtitle={bookmarksError}/>
+          ) : bookmarks.length === 0 ? (
+            <EmptyState
+              icon="bookmark"
+              title="还没有收藏文章"
+              subtitle="在文章页点击书签后，会出现在这里。"
+              action={<button className="btn btn-primary" onClick={()=>onNav && onNav('home')}>去看看首页</button>}
+            />
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
+              {bookmarks.map((article, index) => (
                 <ArticleCard
                   key={article.id}
                   article={article}

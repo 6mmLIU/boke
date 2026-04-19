@@ -29,6 +29,7 @@ model User {
   articles      Article[]
   comments      Comment[]
   likes         Like[]
+  bookmarks     Bookmark[]
   followers     Follow[]        @relation("follower")
   following     Follow[]        @relation("following")
   oauthAccounts OAuthAccount[]
@@ -89,6 +90,7 @@ model Article {
 
   likes     Like[]
   comments  Comment[]
+  bookmarks Bookmark[]
 
   views     Int       @default(0) // 阅读数
   readTime  Int       // 阅读时间(分钟)
@@ -138,4 +140,19 @@ model Follow {
 
   @@id([followerId, followingId])
   @@map("follows")
+}
+
+model Bookmark {
+  id        String   @id @default(uuid())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  articleId String
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, articleId])
+  @@map("bookmarks")
 }

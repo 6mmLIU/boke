@@ -95,7 +95,6 @@ const PageRanking = ({ onNav, user }) => {
               }}>{t.l}</button>
             ))}
           </div>
-          <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>评分 = 阅读 + 点赞×10 + 评论×20</div>
         </div>
 
         {loading ? (

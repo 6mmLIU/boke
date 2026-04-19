@@ -8,6 +8,7 @@ const PageArticle = ({ onNav, articleId, user }) => {
   const [likes, setLikes] = React.useState(0);
   const [likeBusy, setLikeBusy] = React.useState(false);
   const [bookmarked, setBookmarked] = React.useState(false);
+  const [bookmarkBusy, setBookmarkBusy] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
 
   const [comments, setComments] = React.useState([]);
@@ -33,6 +34,7 @@ const PageArticle = ({ onNav, articleId, user }) => {
         setArticle(adapted);
         setLikes(adapted.likes || 0);
         setLiked(!!a.userLiked);
+        setBookmarked(!!a.userBookmarked);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -100,6 +102,23 @@ const PageArticle = ({ onNav, articleId, user }) => {
       setPostError(err.message || '评论发布失败');
     } finally {
       setPosting(false);
+    }
+  };
+
+  const onBookmark = async () => {
+    if (!user) { onNav && onNav('auth'); return; }
+    if (bookmarkBusy || !article) return;
+
+    const wasBookmarked = bookmarked;
+    setBookmarkBusy(true);
+    setBookmarked(!wasBookmarked);
+    try {
+      if (wasBookmarked) await window.API.Articles.unbookmark(article.id);
+      else await window.API.Articles.bookmark(article.id);
+    } catch (err) {
+      setBookmarked(wasBookmarked);
+    } finally {
+      setBookmarkBusy(false);
     }
   };
 
@@ -279,11 +298,12 @@ const PageArticle = ({ onNav, articleId, user }) => {
           <button style={{ padding: 10, border: 'none', background: 'transparent', borderRadius: 'var(--r-pill)', cursor: 'pointer', color: 'var(--ink-2)', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
             <Icon name="chat" size={16}/>{comments.length}
           </button>
-          <button onClick={()=>setBookmarked(b=>!b)} style={{
-            padding: 10, border: 'none', cursor: 'pointer',
+          <button onClick={onBookmark} disabled={bookmarkBusy} style={{
+            padding: 10, border: 'none', cursor: bookmarkBusy ? 'wait' : 'pointer',
             background: bookmarked ? 'var(--accent-wash)' : 'transparent',
             color: bookmarked ? 'var(--accent-deep)' : 'var(--ink-2)',
             borderRadius: 'var(--r-pill)',
+            opacity: bookmarkBusy ? 0.7 : 1,
           }}>
             <Icon name="bookmark" size={16} style={{ fill: bookmarked ? 'currentColor' : 'none' }}/>
           </button>
