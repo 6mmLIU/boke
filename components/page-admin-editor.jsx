@@ -411,47 +411,58 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
                   visibility: 'hidden', pointerEvents: 'none',
                   whiteSpace: 'pre-wrap', wordWrap: 'break-word',
                 }}/>
-                {/* Custom caret with sweep trail */}
+                {/* Custom ink caret with trailing wash */}
                 {caret.on && (
-                  <div className="ink-caret-group" style={{
+                  <div style={{
                     position: 'absolute',
                     left: caret.x,
                     top: caret.y,
-                    height: caret.h,
                     pointerEvents: 'none',
                     zIndex: 2,
                   }}>
-                    {/* Sweep trail — fades behind the caret */}
-                    <div className={`ink-caret-trail ${typing ? 'ink-caret-trail--active' : ''}`} style={{
+                    {/* Trailing wash — a soft gradient that bleeds downward
+                        when typing, like ink soaking into paper */}
+                    <div className="ink-trail" style={{
                       position: 'absolute',
-                      left: -1,
-                      top: '10%',
-                      width: 2,
-                      height: '80%',
-                      borderRadius: 2,
-                      background: 'var(--accent-soft)',
+                      left: -3,
+                      top: 0,
+                      width: 8,
+                      height: caret.h * 2.5,
+                      borderRadius: '0 0 4px 4px',
+                      background: `linear-gradient(to bottom, var(--accent-soft) 0%, var(--accent-wash) 40%, transparent 100%)`,
+                      opacity: typing ? 0.55 : 0,
+                      transform: typing ? `scaleY(1) translateY(${caret.h * 0.15}px)` : `scaleY(0.3) translateY(0px)`,
                       transformOrigin: 'top center',
+                      transition: typing
+                        ? 'opacity 0.12s ease-out, transform 0.18s ease-out'
+                        : 'opacity 0.8s ease-in, transform 0.9s ease-in',
+                      filter: 'blur(2px)',
                     }}/>
-                    {/* Main caret line */}
-                    <div className="ink-caret" style={{
-                      width: 2,
-                      height: '100%',
-                      borderRadius: 2,
-                      background: 'var(--accent)',
+                    {/* Secondary softer wash — wider, more diffuse */}
+                    <div style={{
+                      position: 'absolute',
+                      left: -6,
+                      top: 0,
+                      width: 14,
+                      height: caret.h * 1.8,
+                      borderRadius: '0 0 6px 6px',
+                      background: `radial-gradient(ellipse at top center, var(--accent-wash) 0%, transparent 70%)`,
+                      opacity: typing ? 0.35 : 0,
+                      transform: typing ? 'scaleY(1)' : 'scaleY(0.2)',
+                      transformOrigin: 'top center',
+                      transition: typing
+                        ? 'opacity 0.15s ease-out, transform 0.2s ease-out'
+                        : 'opacity 1s ease-in, transform 1.1s ease-in',
+                      filter: 'blur(4px)',
+                    }}/>
+                    {/* Main caret line — slim, with soft glow */}
+                    <div className={typing ? 'ink-caret ink-caret--typing' : 'ink-caret'} style={{
                       position: 'relative',
-                    }}>
-                      {/* Glow dot at top */}
-                      <div className="ink-caret-dot" style={{
-                        position: 'absolute',
-                        top: -2,
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        width: 4,
-                        height: 4,
-                        borderRadius: '50%',
-                        background: 'var(--accent)',
-                      }}/>
-                    </div>
+                      width: 1.5,
+                      height: caret.h,
+                      borderRadius: 1,
+                      background: 'var(--accent)',
+                    }}/>
                   </div>
                 )}
               </div>
@@ -488,36 +499,25 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
               .md-preview .md-fig figcaption { margin-top: 8px; font-family: var(--serif); font-style: italic; font-size: 12px; color: var(--ink-4); }
               .md-preview p img { display: inline-block; max-width: 100%; max-height: 1.4em; vertical-align: middle; border-radius: 4px; }
 
-              /* ── Custom caret animations ── */
+              /* ── Custom ink caret ── */
               .editor-ta-hide-caret { caret-color: transparent; }
 
-              @keyframes inkCaretBlink {
+              /* Idle: gentle breathing blink */
+              @keyframes inkBreath {
                 0%, 100% { opacity: 1; }
-                50% { opacity: 0.25; }
-              }
-              @keyframes inkCaretGlow {
-                0%, 100% { box-shadow: 0 0 4px 1px var(--accent-soft); }
-                50% { box-shadow: 0 0 8px 2px var(--accent-soft); }
-              }
-              @keyframes inkTrailSweep {
-                0% { opacity: 0.7; transform: scaleY(1.1); }
-                100% { opacity: 0; transform: scaleY(0.3); }
+                50% { opacity: 0.2; }
               }
 
               .ink-caret {
-                animation: inkCaretBlink 1.1s ease-in-out infinite;
-              }
-              .ink-caret-dot {
-                animation: inkCaretGlow 1.1s ease-in-out infinite;
+                animation: inkBreath 1.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+                box-shadow: 0 0 6px 1px var(--accent-wash);
               }
 
-              /* Trail: hidden by default, plays on typing */
-              .ink-caret-trail {
-                opacity: 0;
-                transition: opacity 0.3s ease-out;
-              }
-              .ink-caret-trail--active {
-                animation: inkTrailSweep 0.6s ease-out forwards;
+              /* While typing: stay solid, no blink, subtle glow */
+              .ink-caret--typing {
+                animation: none;
+                opacity: 1;
+                box-shadow: 0 0 8px 2px var(--accent-wash), 0 0 3px 0 var(--accent-soft);
               }
             `}</style>
           </div>
