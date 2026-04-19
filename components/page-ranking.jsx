@@ -1,4 +1,4 @@
-/* global React, ARTICLES, AUTHORS, Icon, Avatar, Cover, TopNav */
+/* global React, Icon, Avatar, Cover, TopNav, EmptyState, Loading, adaptArticle */
 
 // Number with rolling animation
 const RollingNumber = ({ value, duration = 1200 }) => {
@@ -21,28 +21,52 @@ const RollingNumber = ({ value, duration = 1200 }) => {
   return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{display.toLocaleString()}</span>;
 };
 
-const PageRanking = ({ onNav }) => {
-  const [range, setRange] = React.useState('week');
-  const [kind, setKind] = React.useState('article'); // 'article' | 'author'
-  const [seed, setSeed] = React.useState(0);
-  // Rank multipliers by range — simulate rank changes
-  const mults = {
-    day:   [1.0, 0.6, 1.3, 0.8, 1.1, 0.5],
-    week:  [1.2, 1.0, 1.0, 1.4, 0.9, 0.8],
-    month: [1.8, 1.5, 1.2, 2.2, 1.3, 1.0],
-    all:   [3.4, 2.8, 2.1, 4.6, 2.2, 1.7],
-  };
-  const rows = React.useMemo(() => {
-    const base = ARTICLES.map((a, i) => ({
-      ...a,
-      score: Math.round((a.views + a.likes*10 + a.comments*20) * mults[range][i]),
-    }));
-    return base.sort((a,b) => b.score - a.score);
-  }, [range, seed]);
+const PageRanking = ({ onNav, user }) => {
+  const [sort, setSort] = React.useState('hot'); // 'hot' (views) | 'trending' (likes) | 'recent'
+  const [articles, setArticles] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState('');
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    window.API.Articles.list({ sort, limit: 30 })
+      .then((res) => {
+        if (cancelled) return;
+        setArticles((res.articles || []).map(adaptArticle));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message || '加载失败');
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [sort]);
+
+  // Build author leaderboard from the loaded articles
+  const authors = React.useMemo(() => {
+    const map = new Map();
+    for (const a of articles) {
+      const key = a.author.handle || a.author.name;
+      if (!key) continue;
+      const cur = map.get(key) || { ...a.author, articles: 0, likes: 0, views: 0 };
+      cur.articles += 1;
+      cur.likes += a.likes || 0;
+      cur.views += a.views || 0;
+      map.set(key, cur);
+    }
+    return Array.from(map.values()).sort((a, b) => b.likes - a.likes).slice(0, 5);
+  }, [articles]);
+
+  const ranked = React.useMemo(() => articles.map(a => ({
+    ...a,
+    score: (a.views || 0) + (a.likes || 0) * 10 + (a.comments || 0) * 20,
+  })), [articles]);
 
   return (
     <div>
-      <TopNav active="ranking" onNav={onNav}/>
+      <TopNav active="ranking" onNav={onNav} user={user}/>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '48px 48px 100px' }}>
         <div className="fade-up" style={{ marginBottom: 36 }}>
           <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--accent)', fontSize: 15, marginBottom: 10 }}>
@@ -56,69 +80,77 @@ const PageRanking = ({ onNav }) => {
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 16 }}>
           <div style={{ display: 'flex', gap: 4, background: 'var(--paper-2)', padding: 4, borderRadius: 'var(--r-pill)', border: '1px solid var(--border)' }}>
-            {[{k:'day',l:'今日'},{k:'week',l:'本周'},{k:'month',l:'本月'},{k:'all',l:'总榜'}].map(t => (
-              <button key={t.k} onClick={()=>setRange(t.k)} style={{
+            {[
+              { k: 'hot', l: '阅读榜' },
+              { k: 'trending', l: '点赞榜' },
+              { k: 'recent', l: '新发表' },
+            ].map(t => (
+              <button key={t.k} onClick={()=>setSort(t.k)} style={{
                 padding: '8px 18px', fontSize: 13, border: 'none', borderRadius: 'var(--r-pill)',
-                background: range === t.k ? 'var(--surface)' : 'transparent',
-                color: range === t.k ? 'var(--ink)' : 'var(--ink-3)',
-                boxShadow: range === t.k ? 'var(--shadow-sm)' : 'none',
-                cursor: 'pointer', fontWeight: range === t.k ? 500 : 400,
+                background: sort === t.k ? 'var(--surface)' : 'transparent',
+                color: sort === t.k ? 'var(--ink)' : 'var(--ink-3)',
+                boxShadow: sort === t.k ? 'var(--shadow-sm)' : 'none',
+                cursor: 'pointer', fontWeight: sort === t.k ? 500 : 400,
                 transition: 'all var(--d-fast) var(--ease-out)',
               }}>{t.l}</button>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>评分 = 阅读 + 点赞×10 + 评论×20</div>
-            <button className="btn" onClick={()=>setSeed(s=>s+1)} style={{ fontSize: 13 }}>
-              <Icon name="fire" size={14}/>刷新
-            </button>
-          </div>
+          <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>评分 = 阅读 + 点赞×10 + 评论×20</div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 40 }}>
-          {/* Main ranking */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {rows.map((r, i) => (
-              <RankRow key={r.id} rank={i+1} article={r} onOpen={()=>onNav('article')}/>
-            ))}
-          </div>
-
-          {/* Sidebar — author ranking */}
-          <aside>
-            <div style={{ position: 'sticky', top: 100 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 20 }}>
-                <h3 style={{ fontSize: 22 }}>作者榜</h3>
-                <span style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-4)', fontSize: 14 }}>Top writers</span>
-              </div>
-              <div className="card" style={{ padding: '8px 0', overflow: 'hidden' }}>
-                {AUTHORS.map((a, i) => (
-                  <div key={a.handle} className="fade-up" style={{
-                    display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '12px 18px',
-                    borderBottom: i < AUTHORS.length - 1 ? '1px solid var(--border)' : 'none',
-                    animationDelay: i*60 + 'ms',
-                  }}>
-                    <div style={{
-                      width: 22, fontFamily: 'var(--serif)', fontSize: 16,
-                      color: i < 3 ? 'var(--accent)' : 'var(--ink-4)',
-                      fontWeight: 500,
-                    }}>{String(i+1).padStart(2,'0')}</div>
-                    <Avatar char={a.avatar} size={36} accent={i<3}/>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500 }}>{a.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{a.articles} 篇 · <RollingNumber value={a.followers}/> 读者</div>
-                    </div>
-                    <button style={{
-                      padding: '4px 12px', fontSize: 11, border: '1px solid var(--border-strong)',
-                      background: 'transparent', borderRadius: 'var(--r-pill)',
-                      color: 'var(--ink-2)', cursor: 'pointer',
-                    }}>关注</button>
-                  </div>
-                ))}
-              </div>
+        {loading ? (
+          <Loading label="计算榜单中…"/>
+        ) : error ? (
+          <EmptyState icon="x" title="加载失败" subtitle={error}/>
+        ) : ranked.length === 0 ? (
+          <EmptyState icon="trophy" title="榜单空空如也" subtitle="No entries yet — check back soon."/>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 40 }}>
+            {/* Main ranking */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {ranked.map((r, i) => (
+                <RankRow key={r.id} rank={i+1} article={r} onOpen={()=>onNav('article', r.id)}/>
+              ))}
             </div>
-          </aside>
-        </div>
+
+            {/* Sidebar — author ranking */}
+            <aside>
+              <div style={{ position: 'sticky', top: 100 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 20 }}>
+                  <h3 style={{ fontSize: 22 }}>作者榜</h3>
+                  <span style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-4)', fontSize: 14 }}>Top writers</span>
+                </div>
+                {authors.length === 0 ? (
+                  <div className="card" style={{ padding: 20, color: 'var(--ink-4)', fontSize: 13 }}>暂无数据</div>
+                ) : (
+                  <div className="card" style={{ padding: '8px 0', overflow: 'hidden' }}>
+                    {authors.map((a, i) => (
+                      <div key={a.handle || a.name} className="fade-up" style={{
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '12px 18px',
+                        borderBottom: i < authors.length - 1 ? '1px solid var(--border)' : 'none',
+                        animationDelay: i*60 + 'ms',
+                      }}>
+                        <div style={{
+                          width: 22, fontFamily: 'var(--serif)', fontSize: 16,
+                          color: i < 3 ? 'var(--accent)' : 'var(--ink-4)',
+                          fontWeight: 500,
+                        }}>{String(i+1).padStart(2,'0')}</div>
+                        <Avatar char={a.avatar} size={36} accent={i<3}/>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 500 }}>{a.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                            {a.articles} 篇 · <RollingNumber value={a.likes}/> 赞
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </aside>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -158,7 +190,7 @@ const RankRow = ({ rank, article, onOpen }) => {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
-          {article.tags.slice(0,2).map(t => <span key={t} className="tag" style={{ fontSize: 11, padding: '2px 8px' }}>{t}</span>)}
+          {(article.tags || []).slice(0,2).map(t => <span key={t} className="tag" style={{ fontSize: 11, padding: '2px 8px' }}>{t}</span>)}
         </div>
         <h3 style={{
           fontSize: 20, lineHeight: 1.3, marginBottom: 4,
@@ -174,9 +206,9 @@ const RankRow = ({ rank, article, onOpen }) => {
           <RollingNumber value={article.score}/>
         </div>
         <div style={{ fontSize: 11, color: 'var(--ink-4)', display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
-          <span>👁 {article.views.toLocaleString()}</span>
-          <span>♥ {article.likes}</span>
-          <span>💬 {article.comments}</span>
+          <span>{(article.views || 0).toLocaleString()} 阅读</span>
+          <span>{article.likes || 0} 赞</span>
+          <span>{article.comments || 0} 评</span>
         </div>
       </div>
     </div>

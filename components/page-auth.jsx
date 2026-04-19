@@ -1,18 +1,57 @@
-/* global React, ARTICLES, AUTHORS, Icon, Avatar, Cover */
+/* global React, Auth, Icon */
 
 // ─────────────────────────────────────────────────────────
-// Login / Register page — with form animation
+// Login / Register page — real API
 // ─────────────────────────────────────────────────────────
 const PageAuth = ({ onNav }) => {
   const [mode, setMode] = React.useState('login'); // 'login' | 'register'
   const [focused, setFocused] = React.useState(null);
   const [values, setValues] = React.useState({ email: '', password: '', name: '' });
   const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
 
-  const doSubmit = (e) => {
+  // Already logged in? Bounce to home.
+  React.useEffect(() => {
+    if (window.Auth && window.Auth.isLoggedIn() && window.Auth.user) {
+      onNav && onNav('home');
+    }
+  }, []);
+
+  const doSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+    if (!values.email || !values.password) {
+      setError('请填写邮箱和密码');
+      return;
+    }
+    if (mode === 'register' && (!values.name || values.name.length < 2)) {
+      setError('请填写至少 2 个字符的笔名');
+      return;
+    }
+    if (mode === 'register' && values.password.length < 8) {
+      setError('密码至少需要 8 个字符');
+      return;
+    }
     setLoading(true);
-    setTimeout(() => { setLoading(false); onNav && onNav('home'); }, 900);
+    try {
+      if (mode === 'register') {
+        await window.Auth.register({
+          email: values.email.trim(),
+          password: values.password,
+          name: values.name.trim(),
+        });
+      } else {
+        await window.Auth.login({
+          email: values.email.trim(),
+          password: values.password,
+        });
+      }
+      onNav && onNav('home');
+    } catch (err) {
+      setError(err.message || '操作失败，请重试');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const Field = ({ name, label, type = 'text', placeholder }) => (
@@ -33,6 +72,7 @@ const PageAuth = ({ onNav }) => {
         onChange={e=>setValues(v=>({...v, [name]: e.target.value}))}
         onFocus={()=>setFocused(name)} onBlur={()=>setFocused(null)}
         className="input" style={{ background: 'var(--surface)' }}
+        autoComplete={type === 'password' ? (mode === 'register' ? 'new-password' : 'current-password') : (name === 'email' ? 'email' : 'off')}
       />
     </div>
   );
@@ -102,7 +142,7 @@ const PageAuth = ({ onNav }) => {
               transition: 'left 320ms var(--ease-spring)',
             }}/>
             {[{k:'login',l:'登录'},{k:'register',l:'注册'}].map(t => (
-              <button key={t.k} onClick={()=>setMode(t.k)} style={{
+              <button key={t.k} onClick={()=>{setMode(t.k); setError('');}} style={{
                 position: 'relative', zIndex: 1,
                 padding: '8px 32px',
                 background: 'transparent', border: 'none',
@@ -131,6 +171,18 @@ const PageAuth = ({ onNav }) => {
             </div>
             <Field name="email" label="邮箱 / Email" placeholder="you@example.com"/>
             <Field name="password" label="密码 / Password" type="password" placeholder="至少 8 位"/>
+
+            {error && (
+              <div style={{
+                background: 'rgba(184, 85, 64, 0.08)',
+                border: '1px solid rgba(184, 85, 64, 0.25)',
+                color: 'var(--danger)',
+                padding: '10px 14px',
+                borderRadius: 'var(--r-md)',
+                fontSize: 13,
+                marginBottom: 16,
+              }}>{error}</div>
+            )}
 
             {mode === 'login' && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, fontSize: 13 }}>
@@ -194,7 +246,7 @@ const PageAuth = ({ onNav }) => {
               <button key={p.name} className="btn" style={{
                 flex: 1, justifyContent: 'center', fontSize: 13, gap: 8,
                 color: 'var(--ink-2)',
-              }}>
+              }} title="第三方登录暂未启用" disabled>
                 {p.icon}
                 {p.name}
               </button>
@@ -238,12 +290,7 @@ function ParticleField() {
         : [0,2,4].map(i => parseInt(m.slice(i,i+2),16));
       return v;
     };
-    // Ink is a warm paper-tint — a darker sibling of the background,
-    // NOT black. We mix accent with a deep warm taupe so it reads like
-    // tea-stained rice paper rather than ink on snow.
     let accent = hexToRgb(getVar('--accent', '#C5704A'));
-    // Warm sepia-taupe — same hue family as paper, ~40% darker so blots read
-    // as "tea-stained rice paper", never as black ink.
     let inkHue = [140, 115, 88];
     const mo = new MutationObserver(() => {
       accent = hexToRgb(getVar('--accent', '#C5704A'));
@@ -261,45 +308,35 @@ function ParticleField() {
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
 
-    // Ink drops: a small, composed set — not a uniform scatter.
-    // Some are deep ink (near-black), some accent-tinted, all low opacity.
-    // Each has a slow breathing cycle (expand/contract) + gentle drift.
     const rand = (a, b) => a + Math.random() * (b - a);
     const mkDrop = (opts = {}) => {
       const useAccent = Math.random() < 0.4;
       const rMax = opts.rMax ?? rand(40, 180);
       return {
-        // position as normalized 0..1 so layout re-scales on resize
         nx: opts.nx ?? rand(0.05, 0.95),
         ny: opts.ny ?? rand(0.05, 0.95),
-        // drift in normalized units / sec — slow but visibly moving
         dx: rand(-0.02, 0.02),
         dy: rand(-0.015, 0.015),
-        // independent sway phases for organic wander
         swayPhaseX: rand(0, Math.PI * 2),
         swayPhaseY: rand(0, Math.PI * 2),
         swaySpeed: rand(0.15, 0.35),
         swayAmp: rand(0.015, 0.04),
         rMax,
-        rMin: rMax * rand(0.35, 0.6),    // wider range → visible size change
+        rMin: rMax * rand(0.35, 0.6),
         phase: rand(0, Math.PI * 2),
-        phaseSpeed: rand(0.18, 0.4),     // rad/sec — gentle breath
+        phaseSpeed: rand(0.18, 0.4),
         alphaMax: rand(0.14, useAccent ? 0.38 : 0.28),
         useAccent,
-        softness: rand(0.55, 0.85),      // how far the bloom fades
+        softness: rand(0.55, 0.85),
       };
     };
 
-    // Composed layout: a few large anchor blots, many small satellite specks.
     const drops = [];
-    // Large anchors — placed with calligraphic rhythm (loose diagonal)
     drops.push(mkDrop({ nx: 0.18, ny: 0.72, rMax: rand(160, 220) }));
     drops.push(mkDrop({ nx: 0.42, ny: 0.28, rMax: rand(120, 170) }));
     drops.push(mkDrop({ nx: 0.78, ny: 0.55, rMax: rand(180, 240) }));
     drops.push(mkDrop({ nx: 0.62, ny: 0.88, rMax: rand(90, 140) }));
-    // Mid-size
     for (let i = 0; i < 6; i++) drops.push(mkDrop({ rMax: rand(50, 100) }));
-    // Small specks — add texture without noise
     for (let i = 0; i < 14; i++) drops.push(mkDrop({ rMax: rand(12, 34) }));
 
     let last = performance.now();
@@ -310,27 +347,22 @@ function ParticleField() {
       ctx.clearRect(0, 0, W, H);
 
       for (const d of drops) {
-        // breathe
         d.phase += d.phaseSpeed * dt;
-        // drift slowly across the canvas
         d.nx += d.dx * dt;
         d.ny += d.dy * dt;
-        // add organic sway so motion isn't linear
         d.swayPhaseX += d.swaySpeed * dt;
         d.swayPhaseY += d.swaySpeed * dt * 0.8;
-        // soft wrap — respawn on opposite edge when drifted off
         if (d.nx < -0.15) d.nx = 1.15; else if (d.nx > 1.15) d.nx = -0.15;
         if (d.ny < -0.15) d.ny = 1.15; else if (d.ny > 1.15) d.ny = -0.15;
 
         const x = (d.nx + Math.sin(d.swayPhaseX) * d.swayAmp) * W;
         const y = (d.ny + Math.cos(d.swayPhaseY) * d.swayAmp) * H;
-        const breath = 0.5 + 0.5 * Math.sin(d.phase); // 0..1
+        const breath = 0.5 + 0.5 * Math.sin(d.phase);
         const r = d.rMin + (d.rMax - d.rMin) * breath;
         const a = d.alphaMax * (0.45 + 0.55 * breath);
 
         const [cr, cg, cb] = d.useAccent ? accent : inkHue;
 
-        // Radial gradient bloom — dense core, soft bleed outward (rice-paper feel)
         const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
         grad.addColorStop(0,           `rgba(${cr},${cg},${cb},${a})`);
         grad.addColorStop(d.softness * 0.5, `rgba(${cr},${cg},${cb},${a * 0.35})`);

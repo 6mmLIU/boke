@@ -1,7 +1,7 @@
-/* global React, ARTICLES, AUTHORS, Icon, Avatar, Cover, TopNav */
+/* global React, API, Icon, Avatar, Cover, TopNav, EmptyState, Loading, adaptArticle */
 
 // ─────────────────────────────────────────────────────────
-// Article card — with hover expansion
+// Article card — opens article by id
 // ─────────────────────────────────────────────────────────
 const ArticleCard = ({ article, onOpen, compact, featured, delay = 0 }) => {
   const [hover, setHover] = React.useState(false);
@@ -23,8 +23,8 @@ const ArticleCard = ({ article, onOpen, compact, featured, delay = 0 }) => {
       }}>
       <Cover variant={article.cover} height={featured ? 280 : compact ? 120 : 180}/>
       <div style={{ padding: compact ? '16px 18px' : '22px 24px 20px', flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          {article.tags.map(t => <span key={t} className="tag">{t}</span>)}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+          {(article.tags || []).map(t => <span key={t} className="tag">{t}</span>)}
         </div>
         <h3 style={{
           fontSize: featured ? 28 : compact ? 17 : 21,
@@ -32,11 +32,13 @@ const ArticleCard = ({ article, onOpen, compact, featured, delay = 0 }) => {
           transition: 'color var(--d-fast)',
           color: hover ? 'var(--accent)' : 'var(--ink)',
         }}>{article.title}</h3>
-        <div style={{
-          fontFamily: 'var(--serif)', fontStyle: 'italic',
-          fontSize: featured ? 16 : 13,
-          color: 'var(--ink-4)', marginBottom: 12,
-        }}>{article.titleEn}</div>
+        {article.titleEn && (
+          <div style={{
+            fontFamily: 'var(--serif)', fontStyle: 'italic',
+            fontSize: featured ? 16 : 13,
+            color: 'var(--ink-4)', marginBottom: 12,
+          }}>{article.titleEn}</div>
+        )}
         {!compact && (
           <p style={{
             fontSize: 14, lineHeight: 1.65, color: 'var(--ink-3)',
@@ -54,8 +56,8 @@ const ArticleCard = ({ article, onOpen, compact, featured, delay = 0 }) => {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--ink-4)' }}>
-            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><Icon name="eye" size={13}/> {article.views.toLocaleString()}</span>
-            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><Icon name="heart" size={13}/> {article.likes}</span>
+            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><Icon name="eye" size={13}/> {(article.views || 0).toLocaleString()}</span>
+            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><Icon name="heart" size={13}/> {article.likes || 0}</span>
           </div>
         </div>
       </div>
@@ -66,16 +68,40 @@ const ArticleCard = ({ article, onOpen, compact, featured, delay = 0 }) => {
 // ─────────────────────────────────────────────────────────
 // Home / Feed page
 // ─────────────────────────────────────────────────────────
-const PageHome = ({ onNav, tweaks }) => {
+const PageHome = ({ onNav, tweaks, user }) => {
   const [sort, setSort] = React.useState('recent');
   const [loading, setLoading] = React.useState(true);
-  React.useEffect(() => { const t = setTimeout(()=>setLoading(false), 600); return ()=>clearTimeout(t); }, []);
+  const [articles, setArticles] = React.useState([]);
+  const [error, setError] = React.useState('');
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    window.API.Articles.list({ sort, limit: 24 })
+      .then((res) => {
+        if (cancelled) return;
+        setArticles((res.articles || []).map(adaptArticle));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message || '加载失败');
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [sort]);
 
   const compact = tweaks?.density === 'compact';
+  const openArticle = (id) => onNav && onNav('article', id);
+
+  const featured = articles[0];
+  const sideTop = articles.slice(1, 3);
+  const sideBot = articles.slice(3, 5);
+  const remaining = articles.slice(5);
 
   return (
     <div>
-      <TopNav active="home" onNav={onNav}/>
+      <TopNav active="home" onNav={onNav} user={user}/>
       <div style={{ maxWidth: 1280, margin: '0 auto', padding: '40px 48px 80px' }}>
         {/* Hero */}
         <div style={{ marginBottom: 48, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 40 }}>
@@ -94,7 +120,7 @@ const PageHome = ({ onNav, tweaks }) => {
             {[
               { k: 'recent', l: '最新' },
               { k: 'hot', l: '热度' },
-              { k: 'following', l: '关注' },
+              { k: 'trending', l: '点赞' },
             ].map(t => (
               <button key={t.k} onClick={()=>setSort(t.k)} style={{
                 padding: '8px 18px', fontSize: 13, border: 'none', borderRadius: 'var(--r-pill)',
@@ -120,37 +146,60 @@ const PageHome = ({ onNav, tweaks }) => {
               <div className="skeleton" style={{ height: 228 }}/>
             </div>
           </div>
+        ) : error ? (
+          <EmptyState icon="x" title="加载失败" subtitle={error}/>
+        ) : articles.length === 0 ? (
+          <EmptyState
+            icon="feather"
+            title="还没有文章"
+            subtitle="The shelf is empty — be the first to write."
+            action={user
+              ? <button className="btn btn-primary" onClick={()=>onNav('admin-editor', null)}>写第一篇</button>
+              : <button className="btn btn-primary" onClick={()=>onNav('auth')}>登录开始写作</button>
+            }
+          />
         ) : (
           <>
-            {/* Featured row */}
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 24, marginBottom: 32 }}>
-              <ArticleCard article={ARTICLES[0]} onOpen={()=>onNav('article')} featured delay={0}/>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                <ArticleCard article={ARTICLES[1]} onOpen={()=>onNav('article')} compact delay={80}/>
-                <ArticleCard article={ARTICLES[2]} onOpen={()=>onNav('article')} compact delay={160}/>
+            {/* Featured row — only show if we have multiple articles */}
+            {articles.length >= 5 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 24, marginBottom: 32 }}>
+                <ArticleCard article={featured} onOpen={openArticle} featured delay={0}/>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  {sideTop.map((a, i) => <ArticleCard key={a.id} article={a} onOpen={openArticle} compact delay={80+i*80}/>)}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  {sideBot.map((a, i) => <ArticleCard key={a.id} article={a} onOpen={openArticle} compact delay={240+i*80}/>)}
+                </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                <ArticleCard article={ARTICLES[3]} onOpen={()=>onNav('article')} compact delay={240}/>
-                <ArticleCard article={ARTICLES[4]} onOpen={()=>onNav('article')} compact delay={320}/>
+            ) : (
+              <div style={{
+                display: 'grid', gridTemplateColumns: compact ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: 24,
+              }}>
+                {articles.map((a, i) => (
+                  <ArticleCard key={a.id} article={a} onOpen={openArticle} delay={i*60}/>
+                ))}
               </div>
-            </div>
+            )}
 
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 14,
-              margin: '48px 0 28px', color: 'var(--ink-3)',
-            }}>
-              <span style={{ fontFamily: 'var(--serif)', fontSize: 22, color: 'var(--ink)' }}>继续阅读</span>
-              <span style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-4)' }}>Continue reading</span>
-              <div style={{ flex: 1, height: 1, background: 'var(--border)' }}/>
-            </div>
-
-            <div style={{
-              display: 'grid', gridTemplateColumns: compact ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: 24,
-            }}>
-              {ARTICLES.map((a, i) => (
-                <ArticleCard key={a.id} article={a} onOpen={()=>onNav('article')} delay={i*60}/>
-              ))}
-            </div>
+            {remaining.length > 0 && (
+              <>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 14,
+                  margin: '48px 0 28px', color: 'var(--ink-3)',
+                }}>
+                  <span style={{ fontFamily: 'var(--serif)', fontSize: 22, color: 'var(--ink)' }}>继续阅读</span>
+                  <span style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-4)' }}>Continue reading</span>
+                  <div style={{ flex: 1, height: 1, background: 'var(--border)' }}/>
+                </div>
+                <div style={{
+                  display: 'grid', gridTemplateColumns: compact ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: 24,
+                }}>
+                  {remaining.map((a, i) => (
+                    <ArticleCard key={a.id} article={a} onOpen={openArticle} delay={i*60}/>
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

@@ -1,15 +1,63 @@
-/* global React, ARTICLES, COMMENTS, Icon, Avatar, Cover, TopNav */
+/* global React, Icon, Avatar, Cover, TopNav, EmptyState, Loading, formatDate, formatRelative, adaptArticle */
 
-const PageArticle = ({ onNav }) => {
-  const a = ARTICLES[0];
+const PageArticle = ({ onNav, articleId, user }) => {
+  const [article, setArticle] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState('');
   const [liked, setLiked] = React.useState(false);
-  const [likes, setLikes] = React.useState(a.likes);
+  const [likes, setLikes] = React.useState(0);
+  const [likeBusy, setLikeBusy] = React.useState(false);
   const [bookmarked, setBookmarked] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
-  const [comments, setComments] = React.useState(COMMENTS);
-  const [draft, setDraft] = React.useState('');
-  const scrollRef = React.useRef(null);
 
+  const [comments, setComments] = React.useState([]);
+  const [commentsLoading, setCommentsLoading] = React.useState(false);
+  const [draft, setDraft] = React.useState('');
+  const [posting, setPosting] = React.useState(false);
+  const [postError, setPostError] = React.useState('');
+
+  // Fetch the article
+  React.useEffect(() => {
+    if (!articleId) {
+      setArticle(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    window.API.Articles.get(articleId)
+      .then((a) => {
+        if (cancelled) return;
+        const adapted = adaptArticle(a);
+        setArticle(adapted);
+        setLikes(adapted.likes || 0);
+        setLiked(!!a.userLiked);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message || '加载失败');
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [articleId]);
+
+  // Fetch comments
+  React.useEffect(() => {
+    if (!articleId) return;
+    let cancelled = false;
+    setCommentsLoading(true);
+    window.API.Comments.list(articleId, { limit: 50 })
+      .then((res) => {
+        if (cancelled) return;
+        setComments(res.comments || []);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setCommentsLoading(false); });
+    return () => { cancelled = true; };
+  }, [articleId]);
+
+  // Reading progress
   React.useEffect(() => {
     const handler = () => {
       const el = document.documentElement;
@@ -20,23 +68,85 @@ const PageArticle = ({ onNav }) => {
     return () => window.removeEventListener('scroll', handler);
   }, []);
 
-  const onLike = () => {
-    setLiked(l => !l);
-    setLikes(n => liked ? n - 1 : n + 1);
+  const onLike = async () => {
+    if (!user) { onNav && onNav('auth'); return; }
+    if (likeBusy || !article) return;
+    setLikeBusy(true);
+    const wasLiked = liked;
+    setLiked(!wasLiked);
+    setLikes(n => wasLiked ? Math.max(0, n - 1) : n + 1);
+    try {
+      if (wasLiked) await window.API.Articles.unlike(article.id);
+      else await window.API.Articles.like(article.id);
+    } catch (err) {
+      setLiked(wasLiked);
+      setLikes(n => wasLiked ? n + 1 : Math.max(0, n - 1));
+    } finally {
+      setLikeBusy(false);
+    }
   };
 
-  const onPost = () => {
-    if (!draft.trim()) return;
-    setComments(cs => [{
-      id: 'n' + Date.now(), author: '你', avatar: '你', handle: 'you',
-      time: '刚刚', likes: 0, text: draft.trim(), isNew: true,
-    }, ...cs]);
-    setDraft('');
+  const onPost = async () => {
+    if (!user) { onNav && onNav('auth'); return; }
+    const text = draft.trim();
+    if (!text || posting) return;
+    setPosting(true);
+    setPostError('');
+    try {
+      const res = await window.API.Comments.create(article.id, text);
+      setComments(cs => [{ ...res.comment, isNew: true }, ...cs]);
+      setDraft('');
+    } catch (err) {
+      setPostError(err.message || '评论发布失败');
+    } finally {
+      setPosting(false);
+    }
   };
+
+  // ── Render guards ──
+  if (!articleId) {
+    return (
+      <div>
+        <TopNav active="home" onNav={onNav} user={user}/>
+        <EmptyState
+          icon="doc"
+          title="请先选一篇文章"
+          subtitle="Pick an article from the home feed."
+          action={<button className="btn btn-primary" onClick={()=>onNav && onNav('home')}>回到首页</button>}
+        />
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div>
+        <TopNav active="home" onNav={onNav} user={user}/>
+        <Loading label="正在打开文章…"/>
+      </div>
+    );
+  }
+
+  if (error || !article) {
+    return (
+      <div>
+        <TopNav active="home" onNav={onNav} user={user}/>
+        <EmptyState
+          icon="x"
+          title="文章无法打开"
+          subtitle={error || '可能已被删除或暂时不可用'}
+          action={<button className="btn btn-primary" onClick={()=>onNav && onNav('home')}>回到首页</button>}
+        />
+      </div>
+    );
+  }
+
+  const a = article;
+  const paragraphs = (a.content || '').split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
 
   return (
     <div>
-      <TopNav active="home" onNav={onNav}/>
+      <TopNav active="home" onNav={onNav} user={user}/>
       {/* Reading progress */}
       <div style={{
         position: 'fixed', top: 0, left: 0, right: 0, height: 2, zIndex: 60,
@@ -49,25 +159,34 @@ const PageArticle = ({ onNav }) => {
         }}/>
       </div>
 
+      <Cover variant={a.cover} height={320} rounded={false}/>
+
       <article style={{ maxWidth: 760, margin: '0 auto', padding: '56px 32px 120px' }}>
         <div className="fade-up">
-          <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-            {a.tags.map(t => <span key={t} className="tag">{t}</span>)}
-            <span style={{ fontSize: 12, color: 'var(--ink-4)', marginLeft: 8 }}>{a.date} · {a.readTime} 分钟阅读</span>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+            {(a.tags || []).map(t => <span key={t} className="tag">{t}</span>)}
+            <span style={{ fontSize: 12, color: 'var(--ink-4)', marginLeft: 8 }}>
+              {formatDate(a.createdAt) || a.date} · {a.readTime} 分钟阅读 · {(a.views || 0).toLocaleString()} 阅读
+            </span>
           </div>
           <h1 style={{ fontSize: 52, lineHeight: 1.15, marginBottom: 12, letterSpacing: '-0.02em' }}>{a.title}</h1>
-          <div style={{
-            fontFamily: 'var(--serif)', fontStyle: 'italic',
-            fontSize: 22, color: 'var(--ink-3)', marginBottom: 32,
-          }}>— {a.titleEn}</div>
+          {a.titleEn && (
+            <div style={{
+              fontFamily: 'var(--serif)', fontStyle: 'italic',
+              fontSize: 22, color: 'var(--ink-3)', marginBottom: 32,
+            }}>— {a.titleEn}</div>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '20px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', marginBottom: 40 }}>
             <Avatar char={a.author.avatar} size={44} accent/>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 15, fontWeight: 500 }}>{a.author.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>@{a.author.handle} · 42 篇文章 · 8,920 读者</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
+                @{a.author.handle}
+                {typeof a.author.articles === 'number' ? ` · ${a.author.articles} 篇文章` : ''}
+                {typeof a.author.followers === 'number' ? ` · ${a.author.followers.toLocaleString()} 读者` : ''}
+              </div>
             </div>
-            <button className="btn" style={{ fontSize: 13 }}>+ 关注</button>
           </div>
         </div>
 
@@ -75,34 +194,25 @@ const PageArticle = ({ onNav }) => {
           fontFamily: 'var(--serif)', fontSize: 19, lineHeight: 1.85,
           color: 'var(--ink-2)',
         }}>
-          <p style={{ fontSize: 22, color: 'var(--ink)' }}>
-            <span style={{
-              float: 'left', fontFamily: 'var(--serif)', fontSize: 72, lineHeight: 0.85,
-              marginRight: 12, marginTop: 8, color: 'var(--accent)',
-            }}>当</span>
-            整个互联网都在比拼"更快、更多、更响",写作这件事,忽然显得有点笨拙 —— 你得坐下来,把一个模糊的念头,一点点拧干,直到它变成一个清澈的句子。
-          </p>
-          <p>而这个过程,是反效率的。它不适合算法,不适合推荐系统,也不适合 KPI。它只适合那个慢下来、愿意陪自己想一想的人。</p>
-          <h2 style={{ fontSize: 30, margin: '44px 0 20px' }}>一、我们为什么失去了慢</h2>
-          <p>过去十年,写作的工具变了三次:从博客,到微博,再到算法化的内容流。每一次变化,都让写作离"表达自己"更远一点,离"讨好系统"更近一点。</p>
-          <blockquote style={{
-            margin: '36px 0', padding: '24px 32px',
-            borderLeft: '3px solid var(--accent)',
-            background: 'var(--accent-wash)',
-            fontStyle: 'italic', fontSize: 20, color: 'var(--ink-2)',
-            borderRadius: '0 var(--r-md) var(--r-md) 0',
-          }}>
-            "当你为了被看见而写,你就已经不是自己了。"
-          </blockquote>
-          <p>我不是要复古。我只是想,在效率主义的大合唱里,留一小块空地 —— 让一个人可以不为谁写,只为把自己的想法弄明白。</p>
-          <h2 style={{ fontSize: 30, margin: '44px 0 20px' }}>二、慢写作的三个小练习</h2>
-          <p>这三件事,是我这两年慢慢摸索出来的。它们不难,难的是每天都做:</p>
-          <ul style={{ paddingLeft: 20, marginBottom: 20 }}>
-            <li style={{ marginBottom: 12 }}><b style={{ color: 'var(--ink)' }}>先写再改。</b> 把第一稿当作"思考过程"而不是"成品",允许它粗糙。</li>
-            <li style={{ marginBottom: 12 }}><b style={{ color: 'var(--ink)' }}>朗读一遍。</b> 你会立刻听出哪些句子是假的 —— 它们读起来不像人话。</li>
-            <li><b style={{ color: 'var(--ink)' }}>隔一天再发。</b> 越是兴奋想发的文章,越值得放一放。</li>
-          </ul>
-          <p>写作是反复试错。没有一条捷径能跳过"把话讲清楚"这件事本身。</p>
+          {paragraphs.length === 0 ? (
+            <p style={{ color: 'var(--ink-4)' }}>（这篇文章还没有正文。）</p>
+          ) : paragraphs.map((p, i) => {
+            // First paragraph: drop cap on first character
+            if (i === 0) {
+              const first = p.charAt(0);
+              const rest = p.slice(1);
+              return (
+                <p key={i} style={{ fontSize: 22, color: 'var(--ink)' }}>
+                  <span style={{
+                    float: 'left', fontFamily: 'var(--serif)', fontSize: 72, lineHeight: 0.85,
+                    marginRight: 12, marginTop: 8, color: 'var(--accent)',
+                  }}>{first}</span>
+                  {rest}
+                </p>
+              );
+            }
+            return <p key={i} style={{ marginBottom: 18, whiteSpace: 'pre-wrap' }}>{p}</p>;
+          })}
         </div>
 
         {/* Action bar (sticky bottom-floating) */}
@@ -116,15 +226,16 @@ const PageArticle = ({ onNav }) => {
           zIndex: 40,
           backdropFilter: 'blur(12px)',
         }}>
-          <button onClick={onLike} style={{
+          <button onClick={onLike} disabled={likeBusy} style={{
             display: 'inline-flex', alignItems: 'center', gap: 8,
-            padding: '10px 16px', border: 'none', cursor: 'pointer',
+            padding: '10px 16px', border: 'none', cursor: likeBusy ? 'wait' : 'pointer',
             background: liked ? 'var(--accent-wash)' : 'transparent',
             color: liked ? 'var(--accent-deep)' : 'var(--ink-2)',
             borderRadius: 'var(--r-pill)',
             fontSize: 14, fontWeight: 500, fontFamily: 'inherit',
             transition: 'all var(--d-fast) var(--ease-out)',
             position: 'relative',
+            opacity: likeBusy ? 0.7 : 1,
           }}>
             <span style={{
               display: 'inline-flex',
@@ -155,8 +266,6 @@ const PageArticle = ({ onNav }) => {
           }}>
             <Icon name="bookmark" size={16} style={{ fill: bookmarked ? 'currentColor' : 'none' }}/>
           </button>
-          <div style={{ width: 1, background: 'var(--border)', margin: '4px 2px' }}/>
-          <button className="btn-ghost" style={{ padding: '10px 14px', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink-2)', fontSize: 14 }}>分享</button>
         </div>
 
         {/* Comments */}
@@ -166,38 +275,57 @@ const PageArticle = ({ onNav }) => {
             {comments.length} Conversations
           </div>
 
-          <div className="card" style={{ padding: 20, marginBottom: 28 }}>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <Avatar char="你" size={40} accent/>
-              <div style={{ flex: 1 }}>
-                <textarea
-                  value={draft}
-                  onChange={e=>setDraft(e.target.value)}
-                  placeholder="写下你的想法…"
-                  style={{
-                    width: '100%', minHeight: 72, resize: 'vertical',
-                    border: 'none', background: 'transparent',
-                    fontFamily: 'var(--serif)', fontSize: 16, lineHeight: 1.7,
-                    color: 'var(--ink)', outline: 'none',
-                  }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                  <div style={{ display: 'flex', gap: 8, color: 'var(--ink-4)' }}>
-                    <Icon name="bold" size={15}/><Icon name="italic" size={15}/><Icon name="link" size={15}/><Icon name="quote" size={15}/>
+          {user ? (
+            <div className="card" style={{ padding: 20, marginBottom: 28 }}>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Avatar char={user.name ? user.name[0] : '你'} size={40} accent/>
+                <div style={{ flex: 1 }}>
+                  <textarea
+                    value={draft}
+                    onChange={e=>setDraft(e.target.value)}
+                    placeholder="写下你的想法…"
+                    disabled={posting}
+                    style={{
+                      width: '100%', minHeight: 72, resize: 'vertical',
+                      border: 'none', background: 'transparent',
+                      fontFamily: 'var(--serif)', fontSize: 16, lineHeight: 1.7,
+                      color: 'var(--ink)', outline: 'none',
+                    }}
+                  />
+                  {postError && (
+                    <div style={{ fontSize: 12, color: 'var(--danger)', marginBottom: 8 }}>{postError}</div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, color: 'var(--ink-4)' }}>
+                      <Icon name="bold" size={15}/><Icon name="italic" size={15}/><Icon name="link" size={15}/><Icon name="quote" size={15}/>
+                    </div>
+                    <button onClick={onPost} className="btn btn-primary" style={{ fontSize: 13 }} disabled={!draft.trim() || posting}>
+                      {posting ? '发布中…' : '发布笔谈'}
+                    </button>
                   </div>
-                  <button onClick={onPost} className="btn btn-primary" style={{ fontSize: 13 }} disabled={!draft.trim()}>
-                    发布笔谈
-                  </button>
                 </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="card" style={{ padding: 20, marginBottom: 28, textAlign: 'center' }}>
+              <div style={{ color: 'var(--ink-3)', marginBottom: 12 }}>登录后即可发表笔谈</div>
+              <button className="btn btn-primary" onClick={()=>onNav && onNav('auth')}>登录 / 注册</button>
+            </div>
+          )}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {comments.map((c, i) => (
-              <Comment key={c.id} comment={c} delay={c.isNew ? 0 : i*60}/>
-            ))}
-          </div>
+          {commentsLoading ? (
+            <Loading label="读取笔谈…"/>
+          ) : comments.length === 0 ? (
+            <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--ink-4)', fontFamily: 'var(--serif)', fontStyle: 'italic' }}>
+              还没有人留言 — 来做第一位提笔的人。
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              {comments.map((c, i) => (
+                <Comment key={c.id} comment={c} delay={c.isNew ? 0 : i*60}/>
+              ))}
+            </div>
+          )}
         </div>
       </article>
 
@@ -209,29 +337,25 @@ const PageArticle = ({ onNav }) => {
 };
 
 const Comment = ({ comment, delay = 0 }) => {
-  const [liked, setLiked] = React.useState(false);
-  const [n, setN] = React.useState(comment.likes);
+  const author = comment.author || {};
+  const name = author.name || comment.authorName || '匿名';
+  const handle = author.handle || comment.handle || '';
+  const avatarChar = author.avatar || (name ? name[0] : '匿');
+  const time = comment.createdAt
+    ? formatRelative(comment.createdAt)
+    : (comment.time || '');
   return (
     <div className="fade-up" style={{ animationDelay: delay + 'ms', display: 'flex', gap: 14 }}>
-      <Avatar char={comment.avatar} size={38}/>
+      <Avatar char={avatarChar} size={38}/>
       <div style={{ flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
-          <span style={{ fontWeight: 500, fontSize: 14 }}>{comment.author}</span>
-          <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>@{comment.handle} · {comment.time}</span>
+          <span style={{ fontWeight: 500, fontSize: 14 }}>{name}</span>
+          <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>
+            {handle ? `@${handle}` : ''}{handle && time ? ' · ' : ''}{time}
+          </span>
         </div>
-        <div style={{ fontFamily: 'var(--serif)', fontSize: 15.5, lineHeight: 1.7, color: 'var(--ink-2)', marginBottom: 10 }}>
+        <div style={{ fontFamily: 'var(--serif)', fontSize: 15.5, lineHeight: 1.7, color: 'var(--ink-2)', marginBottom: 10, whiteSpace: 'pre-wrap' }}>
           {comment.text}
-        </div>
-        <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--ink-4)' }}>
-          <button onClick={()=>{setLiked(l=>!l); setN(v=>liked?v-1:v+1);}} style={{
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            color: liked ? 'var(--accent)' : 'var(--ink-4)',
-            display: 'inline-flex', alignItems: 'center', gap: 4, padding: 0, fontSize: 12,
-          }}>
-            <Icon name="heart" size={13} style={{ fill: liked ? 'currentColor' : 'none' }}/>
-            {n}
-          </button>
-          <button style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', fontSize: 12 }}>回复</button>
         </div>
       </div>
     </div>

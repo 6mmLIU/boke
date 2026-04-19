@@ -1,17 +1,15 @@
-/* global React, ARTICLES, Icon, Avatar */
+/* global React, Icon, Avatar, EmptyState, Loading, formatRelative */
 
 // ─────────────────────────────────────────────────────────
 // Admin shell — sidebar + content
 // ─────────────────────────────────────────────────────────
-const AdminShell = ({ active, onNav, children }) => {
+const AdminShell = ({ active, onNav, user, children }) => {
   const items = [
     { k: 'admin', l: '概览', le: 'Overview', icon: 'chart' },
     { k: 'admin-articles', l: '文章', le: 'Articles', icon: 'doc' },
     { k: 'admin-editor', l: '写作', le: 'Write', icon: 'feather' },
-    { k: 'admin-comments', l: '评论', le: 'Comments', icon: 'chat' },
-    { k: 'admin-readers', l: '读者', le: 'Readers', icon: 'user' },
-    { k: 'admin-settings', l: '设置', le: 'Settings', icon: 'settings' },
   ];
+  const u = user || (window.Auth && window.Auth.user) || null;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '248px 1fr', minHeight: '100vh', background: 'var(--paper)' }}>
       <aside style={{
@@ -33,7 +31,7 @@ const AdminShell = ({ active, onNav, children }) => {
           Inkwell <span style={{ fontSize: 11, color: 'var(--ink-4)', fontFamily: 'var(--sans)', padding: '2px 7px', border: '1px solid var(--border)', borderRadius: 4, marginLeft: 'auto' }}>STUDIO</span>
         </a>
         {items.map(it => (
-          <button key={it.k} onClick={()=>onNav(it.k)} style={{
+          <button key={it.k} onClick={()=>onNav(it.k, it.k === 'admin-editor' ? null : undefined)} style={{
             display: 'flex', alignItems: 'center', gap: 12,
             padding: '10px 12px',
             background: active === it.k ? 'var(--paper)' : 'transparent',
@@ -50,13 +48,25 @@ const AdminShell = ({ active, onNav, children }) => {
           </button>
         ))}
         <div style={{ flex: 1 }}/>
-        <div style={{ padding: '12px 10px', display: 'flex', alignItems: 'center', gap: 10, borderTop: '1px solid var(--border)' }}>
-          <Avatar char="沈" size={32} accent/>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 500 }}>沈既白</div>
-            <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>@shenjibai</div>
+        {u && (
+          <div style={{ padding: '12px 10px', display: 'flex', alignItems: 'center', gap: 10, borderTop: '1px solid var(--border)' }}>
+            <Avatar char={u.name ? u.name[0] : '砚'} size={32} accent/>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>{u.name}</div>
+              <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>@{u.handle}</div>
+            </div>
+            <button title="登出" onClick={()=>{
+              window.Auth && window.Auth.logout();
+              onNav && onNav('home');
+            }} style={{
+              background: 'transparent', border: '1px solid var(--border)',
+              color: 'var(--ink-4)', borderRadius: 6, cursor: 'pointer',
+              padding: '4px 6px',
+            }}>
+              <Icon name="x" size={12}/>
+            </button>
           </div>
-        </div>
+        )}
       </aside>
       <main>{children}</main>
     </div>
@@ -66,24 +76,78 @@ const AdminShell = ({ active, onNav, children }) => {
 // ─────────────────────────────────────────────────────────
 // Dashboard — Overview
 // ─────────────────────────────────────────────────────────
-const PageAdminDashboard = ({ onNav }) => {
+const PageAdminDashboard = ({ onNav, user }) => {
+  const [data, setData] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState('');
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    window.API.Admin.stats()
+      .then((res) => {
+        if (cancelled) return;
+        setData(res);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message || '加载失败');
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+  }, []);
+
+  if (loading) {
+    return <AdminShell active="admin" onNav={onNav} user={user}><Loading label="读取统计…"/></AdminShell>;
+  }
+  if (error) {
+    return (
+      <AdminShell active="admin" onNav={onNav} user={user}>
+        <EmptyState icon="x" title="加载失败" subtitle={error}/>
+      </AdminShell>
+    );
+  }
+
+  const s = data && data.stats ? data.stats : {};
+  const totalViews = (s.views && s.views.total && (s.views.total._sum?.views ?? s.views.total)) || 0;
+  const totalLikes = (s.likes && s.likes.total) || 0;
+  const totalArticles = (s.articles && s.articles.total) || 0;
+  const totalFollowers = (s.followers && s.followers.total) || 0;
+
   const stats = [
-    { label: '总阅读', value: 248932, delta: '+12.4%', up: true },
-    { label: '总点赞', value: 18420, delta: '+8.1%', up: true },
-    { label: '新读者', value: 1283, delta: '+24.2%', up: true },
-    { label: '互动率', value: '7.3%', delta: '-0.4%', up: false },
+    { label: '总阅读', value: totalViews },
+    { label: '总点赞', value: totalLikes },
+    { label: '文章数', value: totalArticles },
+    { label: '关注者', value: totalFollowers },
   ];
-  // Sparkline data
-  const series = [12,18,14,22,28,26,34,38,32,40,44,48,46,52,58,54,62,66,70,68,74,78];
-  const max = Math.max(...series);
+
+  // Trend data: array of { date, views } for last 30 days
+  const trend = (data && data.trendData) || [];
+  const series = trend.map(d => d.views || 0);
+  const max = Math.max(1, ...series);
+
+  const topArticles = (data && data.topArticles) || [];
+  const recentActivity = (data && data.recentActivity) || [];
+
+  const greet = (() => {
+    const h = new Date().getHours();
+    if (h < 6) return '夜深了';
+    if (h < 12) return '早上好';
+    if (h < 18) return '下午好';
+    return '晚上好';
+  })();
 
   return (
-    <AdminShell active="admin" onNav={onNav}>
+    <AdminShell active="admin" onNav={onNav} user={user}>
       <div style={{ padding: '32px 48px 80px' }}>
         <div className="fade-up" style={{ marginBottom: 8 }}>
           <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--accent)', fontSize: 14, marginBottom: 8 }}>— 书斋近况 · Studio</div>
-          <h1 style={{ fontSize: 36, marginBottom: 6 }}>早上好,沈既白</h1>
-          <div style={{ color: 'var(--ink-3)' }}>过去 30 天,你的文字被 <b style={{ color: 'var(--ink)' }}>1,283</b> 位新读者读到。</div>
+          <h1 style={{ fontSize: 36, marginBottom: 6 }}>{greet},{user ? user.name : '作者'}</h1>
+          <div style={{ color: 'var(--ink-3)' }}>
+            {totalArticles > 0
+              ? <>你已发表 <b style={{ color: 'var(--ink)' }}>{totalArticles}</b> 篇文章,共获得 <b style={{ color: 'var(--ink)' }}>{totalViews.toLocaleString()}</b> 次阅读。</>
+              : '还没有发表文章 — 写下第一篇,让别人读到你。'}
+          </div>
         </div>
 
         {/* stat cards */}
@@ -94,104 +158,80 @@ const PageAdminDashboard = ({ onNav }) => {
               <div style={{ fontFamily: 'var(--serif)', fontSize: 32, margin: '6px 0 4px', letterSpacing: '-0.01em' }}>
                 {typeof s.value === 'number' ? s.value.toLocaleString() : s.value}
               </div>
-              <div style={{ fontSize: 12, color: s.up ? 'var(--success)' : 'var(--danger)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <Icon name={s.up ? 'arrowUp' : 'arrowDown'} size={12}/>{s.delta}
-              </div>
             </div>
           ))}
         </div>
 
         {/* chart */}
-        <div className="card" style={{ padding: 28, marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 20 }}>
-            <div>
-              <div style={{ fontFamily: 'var(--serif)', fontSize: 20 }}>阅读趋势</div>
-              <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-4)' }}>Reading over time</div>
+        {series.length > 0 && (
+          <div className="card" style={{ padding: 28, marginBottom: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div>
+                <div style={{ fontFamily: 'var(--serif)', fontSize: 20 }}>最近 30 天阅读</div>
+                <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-4)' }}>Reading over time</div>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 4, background: 'var(--paper-2)', padding: 3, borderRadius: 'var(--r-pill)' }}>
-              {['7 天','30 天','90 天'].map((t,i)=>(
-                <button key={t} style={{
-                  padding: '6px 14px', fontSize: 12, border: 'none', borderRadius: 'var(--r-pill)',
-                  background: i===1 ? 'var(--surface)' : 'transparent', cursor: 'pointer',
-                  color: i===1 ? 'var(--ink)' : 'var(--ink-3)',
-                  fontWeight: i===1 ? 500 : 400,
-                }}>{t}</button>
-              ))}
-            </div>
+            <svg viewBox={`0 0 ${series.length*24} 180`} width="100%" height="180" preserveAspectRatio="none" style={{ overflow: 'visible' }}>
+              <defs>
+                <linearGradient id="areaGrad" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.28"/>
+                  <stop offset="100%" stopColor="var(--accent)" stopOpacity="0"/>
+                </linearGradient>
+              </defs>
+              <path
+                d={`M 0 ${180 - series[0]/max*160} ${series.map((v,i)=>`L ${i*24} ${180 - v/max*160}`).join(' ')} L ${(series.length-1)*24} 180 L 0 180 Z`}
+                fill="url(#areaGrad)"
+              />
+              <path
+                d={`M 0 ${180 - series[0]/max*160} ${series.map((v,i)=>`L ${i*24} ${180 - v/max*160}`).join(' ')}`}
+                fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              />
+            </svg>
           </div>
-          <svg viewBox={`0 0 ${series.length*24} 180`} width="100%" height="180" preserveAspectRatio="none" style={{ overflow: 'visible' }}>
-            <defs>
-              <linearGradient id="areaGrad" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.28"/>
-                <stop offset="100%" stopColor="var(--accent)" stopOpacity="0"/>
-              </linearGradient>
-            </defs>
-            <path
-              d={`M 0 ${180 - series[0]/max*160} ${series.map((v,i)=>`L ${i*24} ${180 - v/max*160}`).join(' ')} L ${(series.length-1)*24} 180 L 0 180 Z`}
-              fill="url(#areaGrad)"
-            >
-              <animate attributeName="opacity" from="0" to="1" dur="800ms" fill="freeze"/>
-            </path>
-            <path
-              d={`M 0 ${180 - series[0]/max*160} ${series.map((v,i)=>`L ${i*24} ${180 - v/max*160}`).join(' ')}`}
-              fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-              strokeDasharray="2000" strokeDashoffset="2000"
-              style={{ animation: 'draw 1400ms var(--ease-out) forwards' }}
-            />
-            {series.map((v,i) => (
-              <circle key={i} cx={i*24} cy={180 - v/max*160} r="3" fill="var(--surface)" stroke="var(--accent)" strokeWidth="2"
-                style={{ opacity: 0, animation: `fadeIn 200ms ${600+i*30}ms forwards` }}/>
-            ))}
-          </svg>
-          <style>{`
-            @keyframes draw { to { stroke-dashoffset: 0; } }
-            @keyframes fadeIn { to { opacity: 1; } }
-          `}</style>
-        </div>
+        )}
 
         {/* Two columns */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
           <div className="card" style={{ padding: 24 }}>
             <div style={{ fontFamily: 'var(--serif)', fontSize: 18, marginBottom: 4 }}>最热文章</div>
             <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-4)', marginBottom: 16 }}>Top articles</div>
-            <div>
-              {ARTICLES.slice(0,5).map((a,i) => (
-                <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', borderTop: i ? '1px solid var(--border)' : 'none' }}>
-                  <div style={{ fontFamily: 'var(--serif)', fontSize: 18, color: 'var(--ink-4)', width: 20 }}>{i+1}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.title}</div>
-                    <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{a.views.toLocaleString()} 阅读 · {a.likes} 赞</div>
+            {topArticles.length === 0 ? (
+              <div style={{ color: 'var(--ink-4)', fontSize: 13, padding: '16px 0' }}>暂无数据</div>
+            ) : (
+              <div>
+                {topArticles.map((a,i) => (
+                  <div key={a.id}
+                    onClick={()=>onNav('article', a.id)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', borderTop: i ? '1px solid var(--border)' : 'none', cursor: 'pointer' }}>
+                    <div style={{ fontFamily: 'var(--serif)', fontSize: 18, color: 'var(--ink-4)', width: 20 }}>{i+1}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.title}</div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{(a.views || 0).toLocaleString()} 阅读 · {a.likes || 0} 赞</div>
+                    </div>
                   </div>
-                  <div style={{
-                    width: 80, height: 24,
-                  }}>
-                    <svg width="80" height="24" viewBox="0 0 80 24">
-                      <path d={`M 0 ${20 - (i*3)%12} Q 20 ${8+i*2} 40 ${14 - i} T 80 ${6 + (i%3)*4}`}
-                        fill="none" stroke="var(--accent)" strokeWidth="1.5" opacity="0.8"/>
-                    </svg>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="card" style={{ padding: 24 }}>
-            <div style={{ fontFamily: 'var(--serif)', fontSize: 18, marginBottom: 4 }}>最近互动</div>
-            <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-4)', marginBottom: 16 }}>Recent activity</div>
-            {[
-              { n: '林知夏', a: '喜欢了', t: '《在喧嚣中保留一方砚台》', when: '2 分钟前' },
-              { n: '周砚之', a: '评论了', t: '《在喧嚣中保留一方砚台》', when: '14 分钟前' },
-              { n: '陈墨言', a: '收藏了', t: '《我把博客搬离了平台》', when: '1 小时前' },
-              { n: '叶竹',   a: '关注了你', t: '', when: '3 小时前' },
-              { n: '苏砚秋', a: '喜欢了', t: '《关于专注…》', when: '5 小时前' },
-            ].map((x,i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: i ? '1px solid var(--border)' : 'none' }}>
-                <Avatar char={x.n[0]} size={30}/>
-                <div style={{ flex: 1, fontSize: 13, color: 'var(--ink-2)' }}>
-                  <b>{x.n}</b> <span style={{ color: 'var(--ink-3)' }}>{x.a}</span> {x.t && <span style={{ color: 'var(--accent)' }}>{x.t}</span>}
+            <div style={{ fontFamily: 'var(--serif)', fontSize: 18, marginBottom: 4 }}>最近评论</div>
+            <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-4)', marginBottom: 16 }}>Recent comments</div>
+            {recentActivity.length === 0 ? (
+              <div style={{ color: 'var(--ink-4)', fontSize: 13, padding: '16px 0' }}>暂无评论</div>
+            ) : (
+              recentActivity.map((c,i) => (
+                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                  <Avatar char={c.author && c.author.name ? c.author.name[0] : '匿'} size={30}/>
+                  <div style={{ flex: 1, fontSize: 13, color: 'var(--ink-2)', minWidth: 0 }}>
+                    <b>{c.author ? c.author.name : '匿名'}</b>
+                    <span style={{ color: 'var(--ink-3)' }}> 评论了 </span>
+                    <span style={{ color: 'var(--accent)' }}>《{c.article ? c.article.title : ''}》</span>
+                    <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.text}</div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>{formatRelative(c.createdAt)}</div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{x.when}</div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

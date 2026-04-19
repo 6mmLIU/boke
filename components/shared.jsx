@@ -205,7 +205,11 @@ const Cover = ({ variant = 'warm', height = 160, children, rounded = true }) => 
 // ─────────────────────────────────────────────────────────
 // Top nav — used on every public page
 // ─────────────────────────────────────────────────────────
-const TopNav = ({ active, onNav }) => (
+const TopNav = ({ active, onNav, user }) => {
+  const u = user || (window.Auth && window.Auth.user) || null;
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const initial = u && u.name ? u.name[0] : '游';
+  return (
   <nav style={{
     position: 'sticky', top: 0, zIndex: 50,
     background: 'rgba(247, 243, 237, 0.82)',
@@ -274,17 +278,63 @@ const TopNav = ({ active, onNav }) => (
           borderRadius: 4, fontFamily: 'var(--mono)',
         }}>⌘K</span>
       </div>
-      <a href="#admin" onClick={e=>{e.preventDefault(); onNav && onNav('admin');}}
-        className="btn btn-ghost" style={{ fontSize: 13 }}>
-        <Icon name="feather" size={15}/>
-        写作
-      </a>
-      <div onClick={()=>onNav && onNav('profile')} style={{ cursor: 'pointer' }}>
-        <Avatar char="你" size={34} accent/>
+      {u ? (
+        <a href="#admin-editor" onClick={e=>{e.preventDefault(); onNav && onNav('admin-editor', null);}}
+          className="btn btn-ghost" style={{ fontSize: 13 }}>
+          <Icon name="feather" size={15}/>
+          写作
+        </a>
+      ) : (
+        <a href="#auth" onClick={e=>{e.preventDefault(); onNav && onNav('auth');}}
+          className="btn btn-ghost" style={{ fontSize: 13 }}>
+          登录
+        </a>
+      )}
+      <div style={{ position: 'relative' }}>
+        <div onClick={()=>{ if (u) setMenuOpen(v=>!v); else onNav && onNav('auth'); }} style={{ cursor: 'pointer' }}>
+          <Avatar char={initial} size={34} accent={!!u}/>
+        </div>
+        {menuOpen && u && (
+          <>
+            <div onClick={()=>setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 60 }}/>
+            <div style={{
+              position: 'absolute', right: 0, top: 44, zIndex: 70,
+              minWidth: 220,
+              background: 'var(--surface)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 'var(--r-md)',
+              boxShadow: 'var(--shadow-lg)',
+              padding: 6,
+            }}>
+              <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', marginBottom: 6 }}>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>@{u.handle}</div>
+              </div>
+              <button onClick={()=>{setMenuOpen(false); onNav && onNav('profile');}} style={menuItemStyle}>个人书房</button>
+              <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin');}} style={menuItemStyle}>后台 · Studio</button>
+              <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin-editor', null);}} style={menuItemStyle}>写新文章</button>
+              <div style={{ height: 1, background: 'var(--border)', margin: '6px 0' }}/>
+              <button onClick={()=>{
+                setMenuOpen(false);
+                window.Auth && window.Auth.logout();
+                onNav && onNav('auth');
+              }} style={{...menuItemStyle, color: 'var(--danger)'}}>登出</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   </nav>
-);
+  );
+};
+
+const menuItemStyle = {
+  display: 'block', width: '100%', textAlign: 'left',
+  padding: '8px 12px',
+  background: 'transparent', border: 'none',
+  fontFamily: 'inherit', fontSize: 13, color: 'var(--ink-2)',
+  cursor: 'pointer', borderRadius: 6,
+};
 
 // ─────────────────────────────────────────────────────────
 // Page transition wrapper
@@ -537,7 +587,80 @@ const TweaksPanel = ({ state, set, visible, onClose }) => {
   );
 };
 
+// ─────────────────────────────────────────────────────────
+// Date / time helpers
+// ─────────────────────────────────────────────────────────
+const formatDate = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y} · ${m} · ${day}`;
+};
+
+const formatRelative = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return '刚刚';
+  if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+  if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+  if (diff < 86400 * 7) return Math.floor(diff / 86400) + ' 天前';
+  return formatDate(iso);
+};
+
+// Decorate API article -> shape used by ArticleCard / pages
+const adaptArticle = (a) => ({
+  ...a,
+  date: a.date || formatDate(a.createdAt),
+  views: a.views ?? 0,
+  likes: typeof a.likes === 'number' ? a.likes : (a._count?.likes ?? 0),
+  comments: typeof a.comments === 'number' ? a.comments : (a._count?.comments ?? 0),
+  tags: a.tags || [],
+  cover: a.cover || 'warm',
+  author: a.author && typeof a.author === 'object' ? {
+    name: a.author.name || '匿名',
+    handle: a.author.handle || '',
+    avatar: a.author.avatar || (a.author.name ? a.author.name[0] : '匿'),
+  } : { name: '匿名', handle: '', avatar: '匿' },
+});
+
+// Empty state — used across pages when API returns no data
+const EmptyState = ({ icon = 'feather', title = '此处暂无内容', subtitle = 'Nothing here yet.', action }) => (
+  <div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--ink-4)' }}>
+    <div style={{
+      width: 56, height: 56, borderRadius: '50%',
+      background: 'var(--paper-2)',
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      color: 'var(--ink-4)', marginBottom: 16,
+    }}>
+      <Icon name={icon} size={24}/>
+    </div>
+    <div style={{ fontFamily: 'var(--serif)', fontSize: 22, color: 'var(--ink-2)', marginBottom: 6 }}>{title}</div>
+    <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 14 }}>{subtitle}</div>
+    {action && <div style={{ marginTop: 20 }}>{action}</div>}
+  </div>
+);
+
+const Loading = ({ label = '加载中…' }) => (
+  <div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 14 }}>
+    <span style={{ display: 'inline-flex', gap: 6 }}>
+      {[0,1,2].map(i => (
+        <span key={i} style={{
+          width: 6, height: 6, borderRadius: '50%', background: 'var(--ink-4)',
+          animation: `bounce 900ms ${i*120}ms infinite var(--ease-in-out)`,
+        }}/>
+      ))}
+    </span>
+    <div style={{ marginTop: 10, fontFamily: 'var(--serif)', fontStyle: 'italic' }}>{label}</div>
+  </div>
+);
+
 Object.assign(window, {
   ARTICLES, AUTHORS, COMMENTS,
   Icon, Avatar, Cover, TopNav, PageTransition, TweaksPanel,
+  formatDate, formatRelative, adaptArticle, EmptyState, Loading,
 });

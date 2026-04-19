@@ -16,6 +16,8 @@
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
+  <script src="api.js"></script>
+
   <script type="text/babel" src="components/shared.jsx"></script>
   <script type="text/babel" src="components/page-auth.jsx"></script>
   <script type="text/babel" src="components/page-home.jsx"></script>
@@ -38,12 +40,40 @@
     }/*EDITMODE-END*/;
 
     function App() {
-      const [page, setPage] = useState(() => {
+      const [page, _setPage] = useState(() => {
         const q = new URLSearchParams(location.search).get('page');
         if (q) return q;
         const saved = localStorage.getItem('inkwell.page');
         return saved || 'auth';
       });
+      const [currentArticleId, setCurrentArticleId] = useState(() => {
+        return localStorage.getItem('inkwell.currentArticleId') || null;
+      });
+      // Single nav entry point: setPage(page, articleId?)
+      const setPage = (next, articleId) => {
+        if (articleId !== undefined) {
+          if (articleId) {
+            setCurrentArticleId(articleId);
+            try { localStorage.setItem('inkwell.currentArticleId', articleId); } catch {}
+          } else {
+            setCurrentArticleId(null);
+            try { localStorage.removeItem('inkwell.currentArticleId'); } catch {}
+          }
+        }
+        _setPage(next);
+      };
+      const [authedUser, setAuthedUser] = useState(() => window.Auth?.user || null);
+      useEffect(() => {
+        // Refresh user from server on mount; subscribe to auth changes
+        window.Auth?.refresh().then((u) => setAuthedUser(u || null));
+        const off = window.Auth?.onChange((u) => setAuthedUser(u));
+        return () => { try { off && off(); } catch {} };
+      }, []);
+      // If not logged in and on a protected page, bounce to auth
+      useEffect(() => {
+        const protectedPages = ['admin', 'admin-articles', 'admin-editor', 'admin-comments', 'admin-readers', 'admin-settings'];
+        if (!authedUser && protectedPages.includes(page)) _setPage('auth');
+      }, [authedUser, page]);
       const [tweaks, setTweaks] = useState(() => {
         try {
           const s = localStorage.getItem('inkwell.tweaks');
@@ -86,16 +116,16 @@
 
       const pages = {
         auth: <PageAuth onNav={setPage}/>,
-        home: <PageHome onNav={setPage} tweaks={tweaks}/>,
-        article: <PageArticle onNav={setPage}/>,
-        ranking: <PageRanking onNav={setPage}/>,
-        profile: <PageProfile onNav={setPage}/>,
-        admin: <PageAdminDashboard onNav={setPage}/>,
-        'admin-articles': <PageAdminArticles onNav={setPage}/>,
-        'admin-editor': <PageAdminEditor onNav={setPage}/>,
-        'admin-comments': <PageAdminDashboard onNav={setPage}/>,
-        'admin-readers': <PageAdminDashboard onNav={setPage}/>,
-        'admin-settings': <PageAdminDashboard onNav={setPage}/>,
+        home: <PageHome onNav={setPage} tweaks={tweaks} user={authedUser}/>,
+        article: <PageArticle onNav={setPage} articleId={currentArticleId} user={authedUser}/>,
+        ranking: <PageRanking onNav={setPage} user={authedUser}/>,
+        profile: <PageProfile onNav={setPage} user={authedUser}/>,
+        admin: <PageAdminDashboard onNav={setPage} user={authedUser}/>,
+        'admin-articles': <PageAdminArticles onNav={setPage} user={authedUser}/>,
+        'admin-editor': <PageAdminEditor onNav={setPage} user={authedUser} articleId={currentArticleId}/>,
+        'admin-comments': <PageAdminDashboard onNav={setPage} user={authedUser}/>,
+        'admin-readers': <PageAdminDashboard onNav={setPage} user={authedUser}/>,
+        'admin-settings': <PageAdminDashboard onNav={setPage} user={authedUser}/>,
         canvas: null, // handled in index
       };
 

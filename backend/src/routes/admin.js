@@ -29,7 +29,7 @@ router.get('/stats', authenticate, ensureAuthor, async (req, res, next) => {
       totalViews,
       totalLikes,
       totalComments,
-      newFollowers,
+      followerCount,
       recentArticles,
     ] = await Promise.all([
       // 文章总数
@@ -61,13 +61,10 @@ router.get('/stats', authenticate, ensureAuthor, async (req, res, next) => {
         },
       }),
 
-      // 最近30天新增关注
+      // 关注者总数（Follow 模型没有 createdAt 字段，无法做 30 天过滤）
       prisma.follow.count({
         where: {
           followingId: userId,
-          createdAt: {
-            gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-          },
         },
       }),
 
@@ -181,8 +178,7 @@ router.get('/stats', authenticate, ensureAuthor, async (req, res, next) => {
           trend: totalLikes * 0.081,
         },
         followers: {
-          total: 8920, // 模拟数据
-          trend: newFollowers,
+          total: followerCount,
         },
         articles: {
           total: totalArticles,

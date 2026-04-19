@@ -1,8 +1,9 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const { z } = require('zod');
 const { PrismaClient } = require('@prisma/client');
-const { generateToken } = require('../middleware/auth');
+const { generateToken, JWT_SECRET } = require('../middleware/auth');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -55,6 +56,10 @@ router.post('/register', async (req, res, next) => {
     // 生成handle（用于URL的用户名）
     let handle = name.toLowerCase().replace(/\s+/g, '-');
     handle = handle.replace(/[^a-z0-9_-]/g, '');
+    if (!handle) {
+      // 名字里全是非 ASCII 字符（如纯中文），用随机后缀兜底
+      handle = 'user-' + Math.random().toString(36).slice(2, 8);
+    }
 
     // 确保handle唯一
     let uniqueHandle = handle;
@@ -172,7 +177,7 @@ router.get('/me', async (req, res, next) => {
     }
 
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-in-production');
+    const decoded = jwt.verify(token, JWT_SECRET);
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },

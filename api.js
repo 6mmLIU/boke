@@ -1,202 +1,140 @@
-// API工具函数 - 连接前端与后端
+// 砚 Inkwell — 浏览器端 API 客户端
+// 通过 <script> 直接加载，挂到 window.API / window.Auth 上。
+(function (global) {
+  const API_BASE =
+    global.__INKWELL_API__ ||
+    (location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+      ? 'http://localhost:3001'
+      : location.origin);
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+  let authToken = null;
+  let currentUser = null;
+  const listeners = new Set();
 
-// 存储JWT token
-let authToken = localStorage.getItem('authToken');
+  try {
+    authToken = localStorage.getItem('inkwell.token') || null;
+    const cached = localStorage.getItem('inkwell.user');
+    if (cached) currentUser = JSON.parse(cached);
+  } catch {}
 
-// 设置token
-export const setAuthToken = (token) => {
-  authToken = token;
-  if (token) {
-    localStorage.setItem('authToken', token);
-  } else {
-    localStorage.removeItem('authToken');
+  const setAuth = (token, user) => {
+    authToken = token || null;
+    currentUser = user || null;
+    try {
+      if (token) localStorage.setItem('inkwell.token', token); else localStorage.removeItem('inkwell.token');
+      if (user) localStorage.setItem('inkwell.user', JSON.stringify(user)); else localStorage.removeItem('inkwell.user');
+    } catch {}
+    listeners.forEach((fn) => { try { fn(currentUser); } catch {} });
+  };
+
+  async function request(path, { method = 'GET', body, query } = {}) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+    let url = API_BASE + path;
+    if (query && Object.keys(query).length) {
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(query)) {
+        if (v !== undefined && v !== null && v !== '') qs.append(k, v);
+      }
+      const s = qs.toString();
+      if (s) url += '?' + s;
+    }
+
+    let res;
+    try {
+      res = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch (e) {
+      throw new Error('网络异常，请检查后端是否在运行');
+    }
+
+    let data = null;
+    const text = await res.text();
+    if (text) {
+      try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    }
+
+    if (!res.ok) {
+      const msg = (data && (data.error || data.message)) || `请求失败（${res.status}）`;
+      const err = new Error(msg);
+      err.status = res.status;
+      err.details = data && data.details;
+      // 401 自动登出
+      if (res.status === 401 && authToken) setAuth(null, null);
+      throw err;
+    }
+    return data;
   }
-};
 
-// 获取token
-export const getAuthToken = () => authToken;
+  // ────── 认证 ──────
+  const Auth = {
+    get user() { return currentUser; },
+    get token() { return authToken; },
+    isLoggedIn: () => !!authToken,
+    onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
 
-// API请求封装
-export const api = {
-  // 发起请求
-  async request(url, options = {}) {
-    const headers = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
+    async register({ email, password, name }) {
+      const data = await request('/api/auth/register', {
+        method: 'POST', body: { email, password, name },
+      });
+      setAuth(data.token, data.user);
+      return data.user;
+    },
 
-    // 如果有token，添加到header
-    if (authToken) {
-      headers.Authorization = `Bearer ${authToken}`;
-    }
+    async login({ email, password }) {
+      const data = await request('/api/auth/login', {
+        method: 'POST', body: { email, password },
+      });
+      setAuth(data.token, data.user);
+      return data.user;
+    },
 
-    const response = await fetch(`${API_BASE}${url}`, {
-      ...options,
-      headers,
-    });
+    async refresh() {
+      if (!authToken) return null;
+      try {
+        const data = await request('/api/auth/me');
+        setAuth(authToken, data.user);
+        return data.user;
+      } catch {
+        return null;
+      }
+    },
 
-    const data = await response.json();
+    logout() { setAuth(null, null); },
+  };
 
-    if (!response.ok) {
-      throw new Error(data.error || '请求失败');
-    }
+  // ────── 文章 ──────
+  const Articles = {
+    list: (params = {}) => request('/api/articles', { query: params }),
+    get: (id) => request(`/api/articles/${id}`),
+    create: (article) => request('/api/articles', { method: 'POST', body: article }),
+    update: (id, article) => request(`/api/articles/${id}`, { method: 'PUT', body: article }),
+    delete: (id) => request(`/api/articles/${id}`, { method: 'DELETE' }),
+    like: (id) => request(`/api/articles/${id}/like`, { method: 'POST' }),
+    unlike: (id) => request(`/api/articles/${id}/like`, { method: 'DELETE' }),
+  };
 
-    return data;
-  },
+  // ────── 评论 ──────
+  const Comments = {
+    list: (articleId, params = {}) =>
+      request(`/api/comments/articles/${articleId}`, { query: params }),
+    create: (articleId, text) =>
+      request(`/api/comments/articles/${articleId}`, { method: 'POST', body: { text } }),
+    delete: (id) => request(`/api/comments/${id}`, { method: 'DELETE' }),
+  };
 
-  // GET请求
-  get(url, params = {}) {
-    const queryString = new URLSearchParams(params).toString();
-    const fullUrl = queryString ? `${url}?${queryString}` : url;
-    return this.request(fullUrl);
-  },
+  // ────── 后台 ──────
+  const Admin = {
+    stats: () => request('/api/admin/stats'),
+    articles: (params = {}) => request('/api/admin/articles', { query: params }),
+    comments: (params = {}) => request('/api/admin/comments', { query: params }),
+    deleteComment: (id) => request(`/api/admin/comments/${id}`, { method: 'DELETE' }),
+  };
 
-  // POST请求
-  post(url, body) {
-    return this.request(url, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    });
-  },
-
-  // PUT请求
-  put(url, body) {
-    return this.request(url, {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    });
-  },
-
-  // DELETE请求
-  delete(url) {
-    return this.request(url, {
-      method: 'DELETE',
-    });
-  },
-};
-
-// 认证相关
-export const authAPI = {
-  // 注册
-  async register({ email, password, name }) {
-    const data = await api.post('/api/auth/register', {
-      email,
-      password,
-      name,
-    });
-    setAuthToken(data.token);
-    return data;
-  },
-
-  // 登录
-  async login({ email, password }) {
-    const data = await api.post('/api/auth/login', {
-      email,
-      password,
-    });
-    setAuthToken(data.token);
-    return data;
-  },
-
-  // 获取当前用户信息
-  async getCurrentUser() {
-    const data = await api.get('/api/auth/me');
-    return data.user;
-  },
-
-  // 登出
-  logout() {
-    setAuthToken(null);
-  },
-};
-
-// 文章相关
-export const articleAPI = {
-  // 获取文章列表
-  async getArticles({ page = 1, limit = 10, sort = 'recent', tag, author } = {}) {
-    return api.get('/api/articles', {
-      page,
-      limit,
-      sort,
-      tag,
-      author,
-    });
-  },
-
-  // 获取单篇文章
-  async getArticle(id) {
-    return api.get(`/api/articles/${id}`);
-  },
-
-  // 创建文章
-  async createArticle(article) {
-    return api.post('/api/articles', article);
-  },
-
-  // 更新文章
-  async updateArticle(id, article) {
-    return api.put(`/api/articles/${id}`, article);
-  },
-
-  // 删除文章
-  async deleteArticle(id) {
-    return api.delete(`/api/articles/${id}`);
-  },
-
-  // 点赞文章
-  async likeArticle(id) {
-    return api.post(`/api/articles/${id}/like`);
-  },
-
-  // 取消点赞
-  async unlikeArticle(id) {
-    return api.delete(`/api/articles/${id}/like`);
-  },
-};
-
-// 评论相关
-export const commentAPI = {
-  // 获取文章评论
-  async getComments(articleId, { page = 1, limit = 20 } = {}) {
-    return api.get(`/api/comments/articles/${articleId}`, {
-      page,
-      limit,
-    });
-  },
-
-  // 创建评论
-  async createComment(articleId, text) {
-    return api.post(`/api/comments/articles/${articleId}`, { text });
-  },
-
-  // 删除评论
-  async deleteComment(id) {
-    return api.delete(`/api/comments/${id}`);
-  },
-};
-
-// 后台管理相关
-export const adminAPI = {
-  // 获取统计数据
-  async getStats() {
-    return api.get('/api/admin/stats');
-  },
-
-  // 获取文章管理列表
-  async getAdminArticles({ page = 1, limit = 20 } = {}) {
-    return api.get('/api/admin/articles', {
-      page,
-      limit,
-    });
-  },
-
-  // 获取评论管理列表
-  async getAdminComments({ page = 1, limit = 20 } = {}) {
-    return api.get('/api/admin/comments', {
-      page,
-      limit,
-    });
-  },
-};
+  global.API = { request, Articles, Comments, Admin, base: API_BASE };
+  global.Auth = Auth;
+})(window);
