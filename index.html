@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>砚 Inkwell — 博客系统</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Inter:wght@400;500;600&family=Noto+Serif+SC:wght@400;500;600&family=Noto+Sans+SC:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles/tokens.css">
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="components/shared.jsx"></script>
+  <script type="text/babel" src="components/page-auth.jsx"></script>
+  <script type="text/babel" src="components/page-home.jsx"></script>
+  <script type="text/babel" src="components/page-article.jsx"></script>
+  <script type="text/babel" src="components/page-ranking.jsx"></script>
+  <script type="text/babel" src="components/page-profile.jsx"></script>
+  <script type="text/babel" src="components/page-admin-dash.jsx"></script>
+  <script type="text/babel" src="components/page-admin-articles.jsx"></script>
+  <script type="text/babel" src="components/page-admin-editor.jsx"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const TWEAKS_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "theme": "light",
+      "font": "serif",
+      "accent": "terracotta",
+      "density": "loose",
+      "texture": "solid"
+    }/*EDITMODE-END*/;
+
+    function App() {
+      const [page, setPage] = useState(() => {
+        const q = new URLSearchParams(location.search).get('page');
+        if (q) return q;
+        const saved = localStorage.getItem('inkwell.page');
+        return saved || 'auth';
+      });
+      const [tweaks, setTweaks] = useState(() => {
+        try {
+          const s = localStorage.getItem('inkwell.tweaks');
+          return s ? { ...TWEAKS_DEFAULTS, ...JSON.parse(s) } : TWEAKS_DEFAULTS;
+        } catch { return TWEAKS_DEFAULTS; }
+      });
+      const [tweaksOpen, setTweaksOpen] = useState(false);
+      const [editModeActive, setEditModeActive] = useState(false);
+
+      // persist
+      useEffect(() => { localStorage.setItem('inkwell.page', page); window.scrollTo(0,0); }, [page]);
+      useEffect(() => {
+        localStorage.setItem('inkwell.tweaks', JSON.stringify(tweaks));
+        const root = document.documentElement;
+        root.setAttribute('data-theme', tweaks.theme);
+        root.setAttribute('data-font', tweaks.font);
+        root.setAttribute('data-accent', tweaks.accent === 'terracotta' ? '' : tweaks.accent);
+        root.setAttribute('data-density', tweaks.density);
+        root.setAttribute('data-texture', tweaks.texture);
+      }, [tweaks]);
+
+      // Edit mode protocol
+      useEffect(() => {
+        const onMsg = (e) => {
+          if (e.data?.type === '__activate_edit_mode') { setEditModeActive(true); setTweaksOpen(true); }
+          if (e.data?.type === '__deactivate_edit_mode') { setEditModeActive(false); setTweaksOpen(false); }
+        };
+        window.addEventListener('message', onMsg);
+        window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+        return () => window.removeEventListener('message', onMsg);
+      }, []);
+
+      const setPart = (patch) => {
+        setTweaks(t => {
+          const next = { ...t, ...patch };
+          try { window.parent.postMessage({ type: '__edit_mode_set_keys', edits: patch }, '*'); } catch {}
+          return next;
+        });
+      };
+
+      const pages = {
+        auth: <PageAuth onNav={setPage}/>,
+        home: <PageHome onNav={setPage} tweaks={tweaks}/>,
+        article: <PageArticle onNav={setPage}/>,
+        ranking: <PageRanking onNav={setPage}/>,
+        profile: <PageProfile onNav={setPage}/>,
+        admin: <PageAdminDashboard onNav={setPage}/>,
+        'admin-articles': <PageAdminArticles onNav={setPage}/>,
+        'admin-editor': <PageAdminEditor onNav={setPage}/>,
+        'admin-comments': <PageAdminDashboard onNav={setPage}/>,
+        'admin-readers': <PageAdminDashboard onNav={setPage}/>,
+        'admin-settings': <PageAdminDashboard onNav={setPage}/>,
+        canvas: null, // handled in index
+      };
+
+      return (
+        <div data-screen-label={page}>
+          <PageTransition pageKey={page}>
+            {pages[page] || pages.home}
+          </PageTransition>
+
+          {/* Dev page switcher */}
+          <DevSwitcher page={page} setPage={setPage} tweaks={tweaks} setPart={setPart} tweaksOpen={tweaksOpen} openTweaks={()=>setTweaksOpen(v=>!v)}/>
+
+          {tweaksOpen && (
+            <TweaksPanel state={tweaks} set={setPart} visible onClose={()=>setTweaksOpen(false)}/>
+          )}
+        </div>
+      );
+    }
+
+    // Elegant floating dock — minimal pill that expands on hover,
+    // unfolds page menu on click. Sits in bottom-center so it doesn't
+    // collide with content in corners.
+    function DevSwitcher({ page, setPage, tweaks, setPart, tweaksOpen, openTweaks }) {
+      const [open, setOpen] = useState(false);
+      const [hover, setHover] = useState(false);
+      const items = [
+        { k: 'auth',            l: '登录', le: 'Auth' },
+        { k: 'home',            l: '首页', le: 'Home' },
+        { k: 'article',         l: '文章', le: 'Article' },
+        { k: 'ranking',         l: '榜单', le: 'Rank' },
+        { k: 'profile',         l: '主页', le: 'Profile' },
+        { k: 'admin',           l: '后台', le: 'Studio' },
+        { k: 'admin-articles',  l: '管理', le: 'Posts' },
+        { k: 'admin-editor',    l: '写作', le: 'Write' },
+      ];
+      const current = items.find(i => i.k === page) || items[0];
+
+      return (
+        <>
+          {/* Click-away scrim */}
+          {open && (
+            <div onClick={()=>setOpen(false)} style={{
+              position: 'fixed', inset: 0, zIndex: 70,
+              background: 'transparent',
+            }}/>
+          )}
+          <div style={{
+            position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 80,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+          }}>
+            {/* Unfolded page menu */}
+            <div style={{
+              display: 'flex', gap: 4, padding: 6,
+              background: 'rgba(253, 251, 246, 0.85)',
+              backdropFilter: 'blur(16px) saturate(1.2)',
+              WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
+              border: '1px solid var(--border)',
+              borderRadius: 999,
+              boxShadow: '0 10px 40px rgba(42,38,34,0.10), 0 2px 6px rgba(42,38,34,0.04)',
+              opacity: open ? 1 : 0,
+              transform: open ? 'translateY(0) scale(1)' : 'translateY(8px) scale(0.96)',
+              transformOrigin: '50% 100%',
+              pointerEvents: open ? 'auto' : 'none',
+              transition: 'opacity 280ms var(--ease-out), transform 320ms var(--ease-spring)',
+            }}>
+              {items.map((it, i) => {
+                const active = it.k === page;
+                return (
+                  <button key={it.k} onClick={()=>{ setPage(it.k); setOpen(false); }}
+                    style={{
+                      padding: '7px 14px',
+                      background: active ? 'var(--ink)' : 'transparent',
+                      color: active ? 'var(--paper)' : 'var(--ink-3)',
+                      border: 'none', borderRadius: 999,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      fontSize: 12, fontWeight: active ? 500 : 400,
+                      display: 'inline-flex', alignItems: 'baseline', gap: 5,
+                      transition: 'all var(--d-fast) var(--ease-out)',
+                      opacity: open ? 1 : 0,
+                      transform: open ? 'translateY(0)' : 'translateY(4px)',
+                      transitionDelay: open ? (i * 22) + 'ms' : '0ms',
+                    }}
+                    onMouseEnter={e=>{ if(!active) e.currentTarget.style.background = 'var(--paper-2)'; }}
+                    onMouseLeave={e=>{ if(!active) e.currentTarget.style.background = 'transparent'; }}>
+                    {it.l}
+                    <span style={{
+                      fontFamily: 'var(--serif)', fontStyle: 'italic',
+                      fontSize: 10, opacity: 0.55,
+                    }}>{it.le}</span>
+                  </button>
+                );
+              })}
+              <div style={{ width: 1, background: 'var(--border)', margin: '4px 4px' }}/>
+              <a href="canvas.html" style={{
+                padding: '7px 12px', fontSize: 12,
+                color: 'var(--accent)', borderRadius: 999,
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                transition: 'background var(--d-fast)',
+              }}
+                onMouseEnter={e=>e.currentTarget.style.background='var(--accent-wash)'}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                画布 ↗
+              </a>
+            </div>
+
+            {/* Dock */}
+            <div
+              onMouseEnter={()=>setHover(true)}
+              onMouseLeave={()=>setHover(false)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 2,
+                padding: 4,
+                background: 'rgba(253, 251, 246, 0.8)',
+                backdropFilter: 'blur(16px) saturate(1.2)',
+                WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
+                border: '1px solid var(--border)',
+                borderRadius: 999,
+                boxShadow: hover
+                  ? '0 8px 28px rgba(42,38,34,0.12), 0 2px 6px rgba(42,38,34,0.05)'
+                  : '0 2px 10px rgba(42,38,34,0.06), 0 1px 2px rgba(42,38,34,0.03)',
+                transition: 'box-shadow var(--d-base) var(--ease-out)',
+              }}>
+              {/* Page pill (opens menu) */}
+              <button onClick={()=>setOpen(v=>!v)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  padding: '7px 14px 7px 12px',
+                  background: open ? 'var(--paper-2)' : 'transparent',
+                  border: 'none', borderRadius: 999,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 12, color: 'var(--ink-2)',
+                  transition: 'background var(--d-fast)',
+                }}
+                onMouseEnter={e=>{ if(!open) e.currentTarget.style.background='var(--paper-2)'; }}
+                onMouseLeave={e=>{ if(!open) e.currentTarget.style.background='transparent'; }}>
+                <span style={{
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: 'var(--accent)',
+                  boxShadow: '0 0 0 3px var(--accent-wash)',
+                }}/>
+                <span style={{ fontWeight: 500, color: 'var(--ink)' }}>{current.l}</span>
+                <span style={{
+                  fontFamily: 'var(--serif)', fontStyle: 'italic',
+                  color: 'var(--ink-4)', fontSize: 11,
+                }}>{current.le}</span>
+                <span style={{
+                  display: 'inline-flex', marginLeft: 2,
+                  color: 'var(--ink-4)',
+                  transition: 'transform 280ms var(--ease-spring)',
+                  transform: open ? 'rotate(180deg)' : 'rotate(0)',
+                }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 15l-6-6-6 6"/>
+                  </svg>
+                </span>
+              </button>
+
+              {/* Separator */}
+              <div style={{ width: 1, height: 16, background: 'var(--border)' }}/>
+
+              {/* Tweaks toggle */}
+              <button onClick={openTweaks}
+                title={tweaksOpen ? '收起调校' : '打开调校'}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '7px 12px',
+                  background: tweaksOpen ? 'var(--accent-wash)' : 'transparent',
+                  color: tweaksOpen ? 'var(--accent-deep)' : 'var(--ink-3)',
+                  border: 'none', borderRadius: 999,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 12,
+                  transition: 'all var(--d-fast) var(--ease-out)',
+                }}
+                onMouseEnter={e=>{ if(!tweaksOpen) e.currentTarget.style.background='var(--paper-2)'; }}
+                onMouseLeave={e=>{ if(!tweaksOpen) e.currentTarget.style.background='transparent'; }}>
+                <span style={{
+                  display: 'inline-flex',
+                  transition: 'transform 420ms var(--ease-spring)',
+                  transform: tweaksOpen ? 'rotate(90deg)' : 'rotate(0)',
+                }}>
+                  <Icon name="settings" size={13}/>
+                </span>
+                调校
+              </button>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

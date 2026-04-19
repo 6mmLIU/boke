@@ -1,0 +1,99 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String   // 笔名
+  handle    String   @unique // @用户名
+  password  String   // 哈希密码
+  bio       String?  // 个人简介
+  avatar    String?  // 头像URL
+
+  // 关系
+  articles   Article[]
+  comments   Comment[]
+  likes      Like[]
+  followers  Follow[]  @relation("follower")
+  following  Follow[]  @relation("following")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("users")
+}
+
+model Article {
+  id        String   @id @default(uuid())
+  title     String
+  titleEn   String?  // 英文标题
+  excerpt   String   // 摘要
+  content   String   // Markdown/HTML内容
+  cover     String   // 封面类型: warm/moss/indigo/cream
+
+  tags      String[]  // 标签数组
+
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  likes     Like[]
+  comments  Comment[]
+
+  views     Int       @default(0) // 阅读数
+  readTime  Int       // 阅读时间(分钟)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("articles")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  text      String   // 评论内容
+
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  articleId String
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  likes     Int      @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@map("comments")
+}
+
+model Like {
+  id        String @id @default(uuid())
+
+  authorId  String
+  author    User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  articleId String
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([authorId, articleId]) // 每个用户只能点赞一次
+  @@map("likes")
+}
+
+model Follow {
+  followerId  String
+  follower    User   @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+
+  followingId String
+  following   User   @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@map("follows")
+}

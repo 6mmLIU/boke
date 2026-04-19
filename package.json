@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "readme": "echo 请查看 README.md 了解如何运行项目"
+  },
+  "description": "砚 - Inkwell 博客系统（全栈项目）"
+}
