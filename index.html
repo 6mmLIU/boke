@@ -64,6 +64,22 @@
       };
       const [authedUser, setAuthedUser] = useState(() => window.Auth?.user || null);
       useEffect(() => {
+        // OAuth 回调:URL 带 ?oauth=success#token=xxx,把 token 收掉再清 URL
+        const params = new URLSearchParams(location.search);
+        const oauthStatus = params.get('oauth');
+        const hashTokenMatch = location.hash.match(/token=([^&]+)/);
+        if (oauthStatus === 'success' && hashTokenMatch) {
+          const token = decodeURIComponent(hashTokenMatch[1]);
+          window.Auth?.adoptToken(token).then((u) => {
+            setAuthedUser(u || null);
+            history.replaceState(null, '', location.pathname);
+            _setPage('home');
+          });
+        } else if (oauthStatus === 'error') {
+          alert('第三方登录失败:' + (params.get('message') || '未知错误'));
+          history.replaceState(null, '', location.pathname);
+        }
+
         // Refresh user from server on mount; subscribe to auth changes
         window.Auth?.refresh().then((u) => setAuthedUser(u || null));
         const off = window.Auth?.onChange((u) => setAuthedUser(u));

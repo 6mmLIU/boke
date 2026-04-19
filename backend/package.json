@@ -13,7 +13,12 @@
     "prisma:push": "prisma db push",
     "seed": "node prisma/seed.js"
   },
-  "keywords": ["blog", "nodejs", "prisma", "postgresql"],
+  "keywords": [
+    "blog",
+    "nodejs",
+    "prisma",
+    "postgresql"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
@@ -25,6 +30,7 @@
     "express-rate-limit": "^7.2.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^8.0.5",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const authRoutes = require('./routes/auth');
+const oauthRoutes = require('./routes/oauth');
 const articleRoutes = require('./routes/articles');
 const commentRoutes = require('./routes/comments');
 const adminRoutes = require('./routes/admin');
@@ -52,6 +53,7 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
 // API路由
+app.use('/api/auth/oauth', oauthRoutes);  // 在 authRoutes 前注册,避免被它的子路由吃掉
 app.use('/api/auth', authRoutes);
 app.use('/api/articles', articleRoutes);
 app.use('/api/comments', commentRoutes);

@@ -15,21 +15,57 @@ model User {
   email     String   @unique
   name      String   // 笔名
   handle    String   @unique // @用户名
-  password  String   // 哈希密码
+  password  String?  // 哈希密码 (OAuth 用户可能为空)
   bio       String?  // 个人简介
   avatar    String?  // 头像URL
 
   // 关系
-  articles   Article[]
-  comments   Comment[]
-  likes      Like[]
-  followers  Follow[]  @relation("follower")
-  following  Follow[]  @relation("following")
+  articles      Article[]
+  comments      Comment[]
+  likes         Like[]
+  followers     Follow[]        @relation("follower")
+  following     Follow[]        @relation("following")
+  oauthAccounts OAuthAccount[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   @@map("users")
+}
+
+// 邮箱验证码（用于注册时验证）
+model EmailVerificationCode {
+  id        String   @id @default(uuid())
+  email     String
+  code      String   // 6 位数字
+  purpose   String   @default("register") // register / reset
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email, purpose])
+  @@map("email_verification_codes")
+}
+
+// OAuth 第三方登录账号（GitHub / Google / 微信）
+model OAuthAccount {
+  id                String   @id @default(uuid())
+  provider          String   // github / google / wechat
+  providerAccountId String   // 第三方平台返回的用户 ID
+
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 缓存的展示信息（首次登录时填充）
+  email             String?
+  name              String?
+  avatar            String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([provider, providerAccountId])
+  @@map("oauth_accounts")
 }
 
 model Article {

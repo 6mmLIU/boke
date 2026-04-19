@@ -77,9 +77,23 @@
     isLoggedIn: () => !!authToken,
     onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
 
-    async register({ email, password, name }) {
+    // 设置由 OAuth 回调带回的 token (然后调 refresh 拿用户)
+    async adoptToken(token) {
+      authToken = token;
+      try { localStorage.setItem('inkwell.token', token); } catch {}
+      const u = await this.refresh();
+      return u;
+    },
+
+    async sendCode({ email }) {
+      return request('/api/auth/send-code', {
+        method: 'POST', body: { email },
+      });
+    },
+
+    async register({ email, password, name, code }) {
       const data = await request('/api/auth/register', {
-        method: 'POST', body: { email, password, name },
+        method: 'POST', body: { email, password, name, code },
       });
       setAuth(data.token, data.user);
       return data.user;
@@ -102,6 +116,11 @@
       } catch {
         return null;
       }
+    },
+
+    // 第三方登录入口 URL (前端直接 location.href = ... 跳过去)
+    oauthUrl(provider) {
+      return `${API_BASE}/api/auth/oauth/${provider}`;
     },
 
     logout() { setAuth(null, null); },

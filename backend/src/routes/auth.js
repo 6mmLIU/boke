@@ -4,15 +4,75 @@ const jwt = require('jsonwebtoken');
 const { z } = require('zod');
 const { PrismaClient } = require('@prisma/client');
 const { generateToken, JWT_SECRET } = require('../middleware/auth');
+const { sendVerificationCode, isConfigured: smtpConfigured } = require('../lib/mailer');
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// 注册验证schema
+const CODE_TTL_MS = 10 * 60 * 1000; // 10 分钟
+const RESEND_COOLDOWN_MS = 60 * 1000; // 同一邮箱 60 秒内只能发一次
+
+// 邮箱验证码相关 schema
+const sendCodeSchema = z.object({
+  email: z.string().email('请输入有效的邮箱地址'),
+});
+
+// 注册验证schema (带验证码)
 const registerSchema = z.object({
   email: z.string().email('请输入有效的邮箱地址'),
   password: z.string().min(8, '密码至少需要8个字符'),
   name: z.string().min(2, '笔名至少需要2个字符').max(50, '笔名不能超过50个字符'),
+  code: z.string().regex(/^\d{6}$/, '请输入 6 位数字验证码'),
+});
+
+const generateCode = () => String(Math.floor(100000 + Math.random() * 900000));
+
+// @POST /api/auth/send-code
+// @desc 发送邮箱验证码 (用于注册)
+router.post('/send-code', async (req, res, next) => {
+  try {
+    const { email } = sendCodeSchema.parse(req.body);
+
+    // 已注册的邮箱不能再发注册码
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return res.status(409).json({ error: '该邮箱已被注册,请直接登录' });
+    }
+
+    // 节流:同一邮箱 60 秒内只能发一次
+    const recent = await prisma.emailVerificationCode.findFirst({
+      where: { email, purpose: 'register' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (recent && Date.now() - recent.createdAt.getTime() < RESEND_COOLDOWN_MS) {
+      const wait = Math.ceil((RESEND_COOLDOWN_MS - (Date.now() - recent.createdAt.getTime())) / 1000);
+      return res.status(429).json({ error: `请等待 ${wait} 秒后再试` });
+    }
+
+    const code = generateCode();
+    await prisma.emailVerificationCode.create({
+      data: {
+        email,
+        code,
+        purpose: 'register',
+        expiresAt: new Date(Date.now() + CODE_TTL_MS),
+      },
+    });
+
+    await sendVerificationCode(email, code);
+
+    res.json({
+      message: '验证码已发送,请查收邮件',
+      expiresIn: CODE_TTL_MS / 1000,
+      // 开发模式下若 SMTP 未配置,前端可以提示用户去看后端日志
+      devMode: !smtpConfigured(),
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: '验证失败', details: error.errors });
+    }
+    next(error);
+  }
 });
 
 // 登录验证schema
@@ -22,26 +82,25 @@ const loginSchema = z.object({
 });
 
 // @POST /api/auth/register
-// @desc 用户注册
+// @desc 用户注册 (需先调用 /send-code 拿到验证码)
 router.post('/register', async (req, res, next) => {
   try {
     // 验证输入
-    const { email, password, name } = registerSchema.parse(req.body);
+    const { email, password, name, code } = registerSchema.parse(req.body);
 
-    // 检查用户是否已存在
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [{ email }, { handle: name }],
-      },
+    // 验证邮箱验证码
+    const codeRow = await prisma.emailVerificationCode.findFirst({
+      where: { email, purpose: 'register', used: false },
+      orderBy: { createdAt: 'desc' },
     });
-
-    if (existingUser) {
-      if (existingUser.email === email) {
-        return res.status(409).json({ error: '该邮箱已被注册' });
-      }
-      if (existingUser.handle === name) {
-        return res.status(409).json({ error: '该笔名已被使用' });
-      }
+    if (!codeRow) {
+      return res.status(400).json({ error: '请先获取邮箱验证码' });
+    }
+    if (codeRow.expiresAt.getTime() < Date.now()) {
+      return res.status(400).json({ error: '验证码已过期,请重新获取' });
+    }
+    if (codeRow.code !== code) {
+      return res.status(400).json({ error: '验证码错误' });
     }
 
     // 检查邮箱是否已被使用
@@ -72,23 +131,30 @@ router.post('/register', async (req, res, next) => {
     // 哈希密码
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 创建用户
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        name,
-        handle: uniqueHandle,
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        handle: true,
-        bio: true,
-        avatar: true,
-        createdAt: true,
-      },
+    // 创建用户 + 标记验证码已用 (在事务里)
+    const user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email,
+          password: hashedPassword,
+          name,
+          handle: uniqueHandle,
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          handle: true,
+          bio: true,
+          avatar: true,
+          createdAt: true,
+        },
+      });
+      await tx.emailVerificationCode.update({
+        where: { id: codeRow.id },
+        data: { used: true },
+      });
+      return created;
     });
 
     // 生成token

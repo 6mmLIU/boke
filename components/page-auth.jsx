@@ -33,9 +33,19 @@ const Field = ({ name, label, type = 'text', placeholder, value, onChange, focus
 const PageAuth = ({ onNav }) => {
   const [mode, setMode] = React.useState('login'); // 'login' | 'register'
   const [focused, setFocused] = React.useState(null);
-  const [values, setValues] = React.useState({ email: '', password: '', name: '' });
+  const [values, setValues] = React.useState({ email: '', password: '', name: '', code: '' });
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
+  const [info, setInfo] = React.useState('');
+  const [codeSending, setCodeSending] = React.useState(false);
+  const [codeCooldown, setCodeCooldown] = React.useState(0); // 秒数
+
+  // 倒计时
+  React.useEffect(() => {
+    if (codeCooldown <= 0) return;
+    const id = setTimeout(() => setCodeCooldown(c => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [codeCooldown]);
 
   // Already logged in? Bounce to home.
   React.useEffect(() => {
@@ -44,9 +54,36 @@ const PageAuth = ({ onNav }) => {
     }
   }, []);
 
+  const doSendCode = async () => {
+    setError('');
+    setInfo('');
+    const email = values.email.trim();
+    if (!email) {
+      setError('请先填写邮箱');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('请填写有效的邮箱地址');
+      return;
+    }
+    setCodeSending(true);
+    try {
+      const res = await window.Auth.sendCode({ email });
+      setCodeCooldown(60);
+      setInfo(res.devMode
+        ? '验证码已生成 (开发模式:请到后端日志查看)'
+        : '验证码已发送,请到邮箱查收');
+    } catch (err) {
+      setError(err.message || '发送失败,请稍后再试');
+    } finally {
+      setCodeSending(false);
+    }
+  };
+
   const doSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setInfo('');
     if (!values.email || !values.password) {
       setError('请填写邮箱和密码');
       return;
@@ -59,6 +96,10 @@ const PageAuth = ({ onNav }) => {
       setError('密码至少需要 8 个字符');
       return;
     }
+    if (mode === 'register' && !/^\d{6}$/.test(values.code)) {
+      setError('请输入 6 位邮箱验证码');
+      return;
+    }
     setLoading(true);
     try {
       if (mode === 'register') {
@@ -66,6 +107,7 @@ const PageAuth = ({ onNav }) => {
           email: values.email.trim(),
           password: values.password,
           name: values.name.trim(),
+          code: values.code,
         });
       } else {
         await window.Auth.login({
@@ -79,6 +121,11 @@ const PageAuth = ({ onNav }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const goOAuth = (provider) => {
+    setError('');
+    location.href = window.Auth.oauthUrl(provider);
   };
 
   const fieldProps = (name, type = 'text') => ({
@@ -171,24 +218,84 @@ const PageAuth = ({ onNav }) => {
             ))}
           </div>
 
-          <h1 style={{ fontSize: 32, marginBottom: 6 }}>
+          <h1 key={'h1-'+mode} style={{
+            fontSize: 32, marginBottom: 6,
+            animation: 'authFadeUp 480ms var(--ease-out)',
+          }}>
             {mode === 'login' ? '欢迎回来' : '开一间书房'}
           </h1>
-          <div style={{ color: 'var(--ink-3)', fontSize: 14, marginBottom: 28, fontFamily: 'var(--serif)', fontStyle: 'italic' }}>
+          <div key={'sub-'+mode} style={{
+            color: 'var(--ink-3)', fontSize: 14, marginBottom: 28,
+            fontFamily: 'var(--serif)', fontStyle: 'italic',
+            animation: 'authFadeUp 540ms 60ms var(--ease-out) both',
+          }}>
             {mode === 'login' ? 'Welcome back.' : 'Open your study.'}
           </div>
 
           <form onSubmit={doSubmit} style={{ position: 'relative' }}>
+            {/* Slide-in field (笔名). paddingTop gives the floating label
+                clearance so it isn't clipped by overflow:hidden. */}
             <div style={{
-              maxHeight: mode === 'register' ? 80 : 0,
+              maxHeight: mode === 'register' ? 100 : 0,
+              paddingTop: mode === 'register' ? 12 : 0,
               opacity: mode === 'register' ? 1 : 0,
+              transform: mode === 'register' ? 'translateY(0)' : 'translateY(-6px)',
               overflow: 'hidden',
-              transition: 'all 400ms var(--ease-out)',
+              transition: 'max-height 460ms var(--ease-spring), padding-top 460ms var(--ease-spring), opacity 320ms var(--ease-out), transform 460ms var(--ease-spring)',
             }}>
               <Field {...fieldProps('name')} label="笔名 / Pen Name" placeholder="例如:沈既白"/>
             </div>
             <Field {...fieldProps('email')} label="邮箱 / Email" placeholder="you@example.com"/>
             <Field {...fieldProps('password', 'password')} label="密码 / Password" placeholder="至少 8 位"/>
+
+            {/* Slide-in 验证码字段 (注册时) — 输入框 + 发送按钮并排 */}
+            <div style={{
+              maxHeight: mode === 'register' ? 100 : 0,
+              paddingTop: mode === 'register' ? 12 : 0,
+              opacity: mode === 'register' ? 1 : 0,
+              transform: mode === 'register' ? 'translateY(0)' : 'translateY(-6px)',
+              overflow: 'hidden',
+              transition: 'max-height 460ms var(--ease-spring), padding-top 460ms var(--ease-spring), opacity 320ms var(--ease-out), transform 460ms var(--ease-spring)',
+            }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+                <div style={{ flex: 1 }}>
+                  <Field {...fieldProps('code')} label="验证码 / Code" placeholder="6 位数字"/>
+                </div>
+                <button type="button" onClick={doSendCode}
+                  disabled={codeSending || codeCooldown > 0}
+                  style={{
+                    flexShrink: 0,
+                    padding: '0 16px', height: 46,
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border-strong)',
+                    borderRadius: 'var(--r-md)',
+                    color: codeCooldown > 0 ? 'var(--ink-4)' : 'var(--accent)',
+                    fontFamily: 'var(--sans)',
+                    fontSize: 13, fontWeight: 500,
+                    cursor: (codeSending || codeCooldown > 0) ? 'default' : 'pointer',
+                    transition: 'all var(--d-fast) var(--ease-out)',
+                    minWidth: 96,
+                  }}>
+                  {codeSending ? '发送中…'
+                    : codeCooldown > 0 ? `${codeCooldown}s 后重发`
+                    : '发送验证码'}
+                </button>
+              </div>
+            </div>
+
+            {info && (
+              <div style={{
+                background: 'var(--accent-wash)',
+                border: '1px solid rgba(197, 112, 74, 0.25)',
+                color: 'var(--accent-deep, var(--accent))',
+                padding: '10px 14px',
+                borderRadius: 'var(--r-md)',
+                fontSize: 13,
+                fontFamily: 'var(--sans)',
+                marginBottom: 12,
+                animation: 'authFadeUp 320ms var(--ease-out)',
+              }}>{info}</div>
+            )}
 
             {error && (
               <div style={{
@@ -198,7 +305,9 @@ const PageAuth = ({ onNav }) => {
                 padding: '10px 14px',
                 borderRadius: 'var(--r-md)',
                 fontSize: 13,
+                fontFamily: 'var(--sans)',
                 marginBottom: 16,
+                animation: 'authFadeUp 320ms var(--ease-out)',
               }}>{error}</div>
             )}
 
@@ -227,7 +336,13 @@ const PageAuth = ({ onNav }) => {
                   ))}
                 </span>
               ) : (
-                <>{mode === 'login' ? '进入书房' : '创建账户'}<Icon name="arrow" size={15}/></>
+                <span key={'cta-'+mode} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  animation: 'authFadeUp 360ms var(--ease-out)',
+                }}>
+                  {mode === 'login' ? '进入书房' : '创建账户'}
+                  <Icon name="arrow" size={15}/>
+                </span>
               )}
             </button>
           </form>
@@ -243,17 +358,17 @@ const PageAuth = ({ onNav }) => {
 
           <div style={{ display: 'flex', gap: 8 }}>
             {[
-              { name: 'GitHub', icon: (
+              { name: 'GitHub', provider: 'github', enabled: true, icon: (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M12 1.5A10.5 10.5 0 0 0 1.5 12c0 4.64 3 8.57 7.17 9.96.52.1.71-.23.71-.5v-1.8c-2.92.63-3.53-1.4-3.53-1.4-.48-1.2-1.17-1.53-1.17-1.53-.96-.65.07-.64.07-.64 1.06.07 1.62 1.08 1.62 1.08.94 1.6 2.46 1.14 3.06.87.1-.68.37-1.14.67-1.4-2.33-.27-4.78-1.16-4.78-5.18 0-1.14.41-2.08 1.08-2.81-.11-.27-.47-1.34.1-2.8 0 0 .88-.28 2.88 1.07a10 10 0 0 1 5.24 0c2-1.35 2.88-1.07 2.88-1.07.58 1.46.21 2.53.1 2.8.67.73 1.08 1.67 1.08 2.81 0 4.03-2.46 4.9-4.8 5.17.38.32.72.96.72 1.95v2.9c0 .28.19.61.72.5A10.5 10.5 0 0 0 22.5 12 10.5 10.5 0 0 0 12 1.5z"/>
                 </svg>
               )},
-              { name: '微信', icon: (
+              { name: '微信', provider: 'wechat', enabled: false, icon: (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M8.7 4C4.97 4 2 6.58 2 9.74c0 1.82 1 3.4 2.57 4.46l-.52 1.66 1.95-1.05c.7.2 1.44.3 2.2.3h.54a4.48 4.48 0 0 1-.14-1.1c0-2.78 2.62-5.02 5.9-5.02.33 0 .65.02.97.07C14.78 5.6 12 4 8.7 4zm-2.3 2.3a.82.82 0 1 1 0 1.64.82.82 0 0 1 0-1.64zm4.6 0a.82.82 0 1 1 0 1.64.82.82 0 0 1 0-1.64zm3.6 2.85c-3 0-5.4 2.1-5.4 4.68 0 2.6 2.4 4.68 5.4 4.68.62 0 1.23-.1 1.82-.27l1.8.98-.5-1.5c1.35-.95 2.2-2.36 2.2-3.9 0-2.57-2.4-4.67-5.32-4.67zm-1.85 1.9a.68.68 0 1 1 0 1.35.68.68 0 0 1 0-1.36zm3.7 0a.68.68 0 1 1 0 1.35.68.68 0 0 1 0-1.36z"/>
                 </svg>
               )},
-              { name: 'Google', icon: (
+              { name: 'Google', provider: 'google', enabled: false, icon: (
                 <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
                   <path fill="#4285F4" d="M21.6 12.23c0-.68-.06-1.34-.17-1.97H12v3.73h5.38a4.6 4.6 0 0 1-2 3.02v2.5h3.23c1.9-1.74 2.99-4.3 2.99-7.28z"/>
                   <path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.43l-3.23-2.51c-.9.6-2.04.96-3.39.96-2.6 0-4.8-1.76-5.59-4.12H3.07v2.59A10 10 0 0 0 12 22z"/>
@@ -262,11 +377,17 @@ const PageAuth = ({ onNav }) => {
                 </svg>
               )},
             ].map(p => (
-              <button key={p.name} className="btn" style={{
-                flex: 1, justifyContent: 'center', fontSize: 13, gap: 8,
-                fontFamily: 'var(--sans)',
-                color: 'var(--ink-2)',
-              }} title="第三方登录暂未启用" disabled>
+              <button key={p.name} className="btn"
+                onClick={p.enabled ? () => goOAuth(p.provider) : undefined}
+                disabled={!p.enabled}
+                title={p.enabled ? `使用 ${p.name} 登录` : '暂未启用'}
+                style={{
+                  flex: 1, justifyContent: 'center', fontSize: 13, gap: 8,
+                  fontFamily: 'var(--sans)',
+                  color: p.enabled ? 'var(--ink)' : 'var(--ink-4)',
+                  opacity: p.enabled ? 1 : 0.55,
+                  cursor: p.enabled ? 'pointer' : 'not-allowed',
+                }}>
                 {p.icon}
                 {p.name}
               </button>
@@ -274,7 +395,11 @@ const PageAuth = ({ onNav }) => {
           </div>
         </div>
       </div>
-      <style>{`@keyframes bounce { 0%,80%,100%{transform:translateY(0);opacity:.6} 40%{transform:translateY(-6px);opacity:1} }`}</style>
+      <style>{`
+        @keyframes bounce { 0%,80%,100%{transform:translateY(0);opacity:.6} 40%{transform:translateY(-6px);opacity:1} }
+        @keyframes authFadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes authFadeIn { from { opacity: 0; } to { opacity: 1; } }
+      `}</style>
     </div>
   );
 };
