@@ -53,6 +53,46 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
   const [focusedTool, setFocusedTool] = React.useState(null);
   const taRef = React.useRef(null);
 
+  // 自定义光标（带扫尾拖影）
+  const [caret, setCaret] = React.useState({ x: 0, y: 0, h: 25, on: false });
+  const [typing, setTyping] = React.useState(false);
+  const mirrorRef = React.useRef(null);
+  const typingTmrRef = React.useRef(null);
+
+  const pokeTyping = () => {
+    setTyping(true);
+    if (typingTmrRef.current) clearTimeout(typingTmrRef.current);
+    typingTmrRef.current = setTimeout(() => setTyping(false), 650);
+  };
+
+  const updateCaret = React.useCallback(() => {
+    const ta = taRef.current;
+    const mirror = mirrorRef.current;
+    if (!ta || !mirror) return;
+    const cs = window.getComputedStyle(ta);
+    ['fontSize','fontFamily','fontWeight','lineHeight','letterSpacing'].forEach(p => {
+      mirror.style[p] = cs[p];
+    });
+    mirror.style.padding = '0';
+    mirror.style.width = ta.clientWidth + 'px';
+    mirror.style.whiteSpace = 'pre-wrap';
+    mirror.style.wordWrap = 'break-word';
+    mirror.style.overflowWrap = 'break-word';
+
+    const pos = ta.selectionEnd ?? 0;
+    const val = ta.value || '';
+    mirror.textContent = val.slice(0, pos);
+    const span = document.createElement('span');
+    span.textContent = '\u200b';
+    mirror.appendChild(span);
+    mirror.appendChild(document.createTextNode(val.slice(pos) || ' '));
+
+    const x = span.offsetLeft;
+    const y = span.offsetTop;
+    const lh = parseFloat(cs.lineHeight) || 25;
+    setCaret({ x, y, h: lh, on: document.activeElement === ta });
+  }, []);
+
   // Load existing article when editing
   React.useEffect(() => {
     if (!isEdit) return;
@@ -72,6 +112,33 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
       .finally(() => { if (!cancelled) setLoadingArticle(false); });
     return () => { cancelled = true; };
   }, [articleId, isEdit]);
+
+  React.useEffect(() => { updateCaret(); }, [content, updateCaret]);
+
+  React.useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const poke = () => { pokeTyping(); setTimeout(updateCaret, 0); };
+    const onClick = () => setTimeout(updateCaret, 0);
+    const onFocus = () => setTimeout(updateCaret, 0);
+    const onBlur = () => setCaret(c => ({ ...c, on: false }));
+    ta.addEventListener('keyup', poke);
+    ta.addEventListener('keydown', poke);
+    ta.addEventListener('click', onClick);
+    ta.addEventListener('focus', onFocus);
+    ta.addEventListener('blur', onBlur);
+    ta.addEventListener('select', onClick);
+    window.addEventListener('resize', updateCaret);
+    return () => {
+      ta.removeEventListener('keyup', poke);
+      ta.removeEventListener('keydown', poke);
+      ta.removeEventListener('click', onClick);
+      ta.removeEventListener('focus', onFocus);
+      ta.removeEventListener('blur', onBlur);
+      ta.removeEventListener('select', onClick);
+      window.removeEventListener('resize', updateCaret);
+    };
+  }, [updateCaret]);
 
   const wordCount = content.replace(/\s/g,'').length;
   const est = Math.max(1, Math.round(wordCount / 300));
@@ -326,16 +393,68 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
                   </button>
                 ))}
               </div>
-              <textarea
-                ref={taRef}
-                value={content} onChange={e=>setContent(e.target.value)}
-                onPaste={onContentPaste}
-                placeholder="从一个清澈的句子开始…(可直接粘贴图片)"
-                style={{
-                  width: '100%', minHeight: 400, border: 'none', outline: 'none', resize: 'none',
-                  background: 'transparent', fontFamily: 'var(--mono)', fontSize: 14,
-                  lineHeight: 1.8, color: 'var(--ink-2)',
+              <div style={{ position: 'relative' }}>
+                <textarea
+                  ref={taRef}
+                  value={content} onChange={e=>setContent(e.target.value)}
+                  onPaste={onContentPaste}
+                  placeholder="从一个清澈的句子开始…(可直接粘贴图片)"
+                  className="editor-ta-hide-caret"
+                  style={{
+                    width: '100%', minHeight: 400, border: 'none', outline: 'none', resize: 'none',
+                    background: 'transparent', fontFamily: 'var(--mono)', fontSize: 14,
+                    lineHeight: 1.8, color: 'var(--ink-2)',
+                  }}/>
+                {/* Mirror div for caret position measurement */}
+                <div ref={mirrorRef} aria-hidden="true" style={{
+                  position: 'absolute', top: 0, left: 0,
+                  visibility: 'hidden', pointerEvents: 'none',
+                  whiteSpace: 'pre-wrap', wordWrap: 'break-word',
                 }}/>
+                {/* Custom caret with sweep trail */}
+                {caret.on && (
+                  <div className="ink-caret-group" style={{
+                    position: 'absolute',
+                    left: caret.x,
+                    top: caret.y,
+                    height: caret.h,
+                    pointerEvents: 'none',
+                    zIndex: 2,
+                  }}>
+                    {/* Sweep trail — fades behind the caret */}
+                    <div className={`ink-caret-trail ${typing ? 'ink-caret-trail--active' : ''}`} style={{
+                      position: 'absolute',
+                      left: -1,
+                      top: '10%',
+                      width: 2,
+                      height: '80%',
+                      borderRadius: 2,
+                      background: 'var(--accent-soft)',
+                      transformOrigin: 'top center',
+                    }}/>
+                    {/* Main caret line */}
+                    <div className="ink-caret" style={{
+                      width: 2,
+                      height: '100%',
+                      borderRadius: 2,
+                      background: 'var(--accent)',
+                      position: 'relative',
+                    }}>
+                      {/* Glow dot at top */}
+                      <div className="ink-caret-dot" style={{
+                        position: 'absolute',
+                        top: -2,
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        width: 4,
+                        height: 4,
+                        borderRadius: '50%',
+                        background: 'var(--accent)',
+                      }}/>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -368,6 +487,38 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
               .md-preview .md-fig img { display: block; margin: 0 auto; max-width: 100%; max-height: 480px; height: auto; width: auto; object-fit: contain; border-radius: 10px; box-shadow: 0 2px 14px rgba(20,20,20,0.08); background: var(--paper-2); }
               .md-preview .md-fig figcaption { margin-top: 8px; font-family: var(--serif); font-style: italic; font-size: 12px; color: var(--ink-4); }
               .md-preview p img { display: inline-block; max-width: 100%; max-height: 1.4em; vertical-align: middle; border-radius: 4px; }
+
+              /* ── Custom caret animations ── */
+              .editor-ta-hide-caret { caret-color: transparent; }
+
+              @keyframes inkCaretBlink {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.25; }
+              }
+              @keyframes inkCaretGlow {
+                0%, 100% { box-shadow: 0 0 4px 1px var(--accent-soft); }
+                50% { box-shadow: 0 0 8px 2px var(--accent-soft); }
+              }
+              @keyframes inkTrailSweep {
+                0% { opacity: 0.7; transform: scaleY(1.1); }
+                100% { opacity: 0; transform: scaleY(0.3); }
+              }
+
+              .ink-caret {
+                animation: inkCaretBlink 1.1s ease-in-out infinite;
+              }
+              .ink-caret-dot {
+                animation: inkCaretGlow 1.1s ease-in-out infinite;
+              }
+
+              /* Trail: hidden by default, plays on typing */
+              .ink-caret-trail {
+                opacity: 0;
+                transition: opacity 0.3s ease-out;
+              }
+              .ink-caret-trail--active {
+                animation: inkTrailSweep 0.6s ease-out forwards;
+              }
             `}</style>
           </div>
         </div>
