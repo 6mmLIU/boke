@@ -183,12 +183,14 @@
     function FloatingDock({ page, user, setPage, tweaksOpen, openTweaks }) {
       const dockRef = useRef(null);
       const dragRef = useRef(null);
-      const SNAP_DISTANCE = 56;
-      const MAGNET_DISTANCE = 96;
-      const MAGNET_STRENGTH = 0.36;
+      const positionRef = useRef(null);
+      const SNAP_DISTANCE = 48;
+      const MAGNET_DISTANCE = 116;
       const [open, setOpen] = useState(false);
       const [hover, setHover] = useState(false);
       const [isDragging, setIsDragging] = useState(false);
+      const [snapState, setSnapState] = useState({ edgeX: null, edgeY: null });
+      const [snapHint, setSnapHint] = useState({ edgeX: null, edgeY: null });
       const [position, setPosition] = useState(() => {
         try {
           const raw = localStorage.getItem('inkwell.dock.position');
@@ -218,6 +220,10 @@
 
       const current = items.find((item) => item.k === page) || { l: '关于', le: 'About' };
 
+      useEffect(() => {
+        positionRef.current = position;
+      }, [position]);
+
       const getDockMetrics = () => {
         const rect = dockRef.current?.getBoundingClientRect();
         return {
@@ -234,6 +240,17 @@
         };
       };
 
+      const detectSnapHint = (next) => {
+        const { width, height } = getDockMetrics();
+        const maxX = window.innerWidth - width;
+        const maxY = window.innerHeight - height;
+        const clamped = clampPosition(next);
+        return {
+          edgeX: clamped.x < MAGNET_DISTANCE ? 'left' : (maxX - clamped.x < MAGNET_DISTANCE ? 'right' : null),
+          edgeY: clamped.y < MAGNET_DISTANCE ? 'top' : (maxY - clamped.y < MAGNET_DISTANCE ? 'bottom' : null),
+        };
+      };
+
       const attractToEdges = (next) => {
         const { width, height } = getDockMetrics();
         const maxX = window.innerWidth - width;
@@ -241,16 +258,18 @@
         const clamped = clampPosition(next);
 
         const easeAxis = (value, max) => {
-          const distStart = value;
-          const distEnd = max - value;
+          const distStart = Math.max(0, value);
+          const distEnd = Math.max(0, max - value);
           let result = value;
+          const magnetize = (distance) => {
+            const t = 1 - distance / MAGNET_DISTANCE;
+            return 0.82 * (1 - Math.pow(1 - t, 3));
+          };
 
           if (distStart <= distEnd && distStart < MAGNET_DISTANCE) {
-            const pull = 1 - distStart / MAGNET_DISTANCE;
-            result -= distStart * pull * MAGNET_STRENGTH;
+            result -= distStart * magnetize(distStart);
           } else if (distEnd < MAGNET_DISTANCE) {
-            const pull = 1 - distEnd / MAGNET_DISTANCE;
-            result += distEnd * pull * MAGNET_STRENGTH;
+            result += distEnd * magnetize(distEnd);
           }
 
           return result;
@@ -262,18 +281,31 @@
         });
       };
 
-      const snapPosition = (next) => {
+      const resolveSnap = (next) => {
         const { width, height } = getDockMetrics();
         const maxX = window.innerWidth - width;
         const maxY = window.innerHeight - height;
         const snapped = clampPosition(next);
+        let edgeX = null;
+        let edgeY = null;
 
-        if (snapped.x <= SNAP_DISTANCE) snapped.x = 0;
-        if (maxX - snapped.x <= SNAP_DISTANCE) snapped.x = maxX;
-        if (snapped.y <= SNAP_DISTANCE) snapped.y = 0;
-        if (maxY - snapped.y <= SNAP_DISTANCE) snapped.y = maxY;
+        if (snapped.x <= SNAP_DISTANCE) {
+          snapped.x = 0;
+          edgeX = 'left';
+        } else if (maxX - snapped.x <= SNAP_DISTANCE) {
+          snapped.x = maxX;
+          edgeX = 'right';
+        }
 
-        return snapped;
+        if (snapped.y <= SNAP_DISTANCE) {
+          snapped.y = 0;
+          edgeY = 'top';
+        } else if (maxY - snapped.y <= SNAP_DISTANCE) {
+          snapped.y = maxY;
+          edgeY = 'bottom';
+        }
+
+        return { position: snapped, edgeX, edgeY };
       };
 
       useEffect(() => {
@@ -285,7 +317,9 @@
           y: Math.max(16, window.innerHeight - rect.height - 24),
         };
 
-        setPosition((prev) => snapPosition(prev || fallback));
+        const snapped = resolveSnap(positionRef.current || fallback);
+        setPosition(snapped.position);
+        setSnapState({ edgeX: snapped.edgeX, edgeY: snapped.edgeY });
       }, []);
 
       useEffect(() => {
@@ -297,22 +331,29 @@
         const onMove = (event) => {
           if (!dragRef.current) return;
           event.preventDefault();
-          setPosition(attractToEdges({
+          const next = attractToEdges({
             x: event.clientX - dragRef.current.dx,
             y: event.clientY - dragRef.current.dy,
-          }));
+          });
+          setPosition(next);
+          setSnapHint(detectSnapHint(next));
         };
 
         const onUp = () => {
           if (dragRef.current) {
-            setPosition((prev) => prev ? snapPosition(prev) : prev);
+            const snapped = resolveSnap(positionRef.current || { x: 0, y: 0 });
+            setPosition(snapped.position);
+            setSnapState({ edgeX: snapped.edgeX, edgeY: snapped.edgeY });
           }
+          setSnapHint({ edgeX: null, edgeY: null });
           setIsDragging(false);
           dragRef.current = null;
         };
 
         const onResize = () => {
-          setPosition((prev) => prev ? snapPosition(prev) : prev);
+          const snapped = resolveSnap(positionRef.current || { x: 0, y: 0 });
+          setPosition(snapped.position);
+          setSnapState({ edgeX: snapped.edgeX, edgeY: snapped.edgeY });
         };
 
         window.addEventListener('pointermove', onMove);
@@ -330,6 +371,7 @@
         event.preventDefault();
         setOpen(false);
         setIsDragging(true);
+        setSnapHint(detectSnapHint(position));
         dragRef.current = {
           dx: event.clientX - position.x,
           dy: event.clientY - position.y,
@@ -340,8 +382,31 @@
         return <div ref={dockRef} style={{ position: 'fixed', right: 24, bottom: 24, opacity: 0, pointerEvents: 'none' }}/>;
       }
 
+      const activeEdgeX = isDragging ? snapHint.edgeX : snapState.edgeX;
+      const activeEdgeY = isDragging ? snapHint.edgeY : snapState.edgeY;
+      const attachedLeft = activeEdgeX === 'left';
+      const attachedRight = activeEdgeX === 'right';
+      const attachedTop = activeEdgeY === 'top';
+      const attachedBottom = activeEdgeY === 'bottom';
+
       return (
         <>
+          <div style={{
+            position: 'fixed',
+            left: attachedLeft ? 0 : 'auto',
+            right: attachedRight ? 0 : 'auto',
+            top: attachedTop ? 0 : 18,
+            bottom: attachedBottom ? 0 : 18,
+            width: attachedLeft || attachedRight ? 4 : 'auto',
+            height: attachedTop || attachedBottom ? 4 : 'auto',
+            borderRadius: 999,
+            background: 'linear-gradient(180deg, rgba(197,112,74,0.55), rgba(197,112,74,0.15))',
+            boxShadow: '0 0 20px rgba(197,112,74,0.18)',
+            opacity: (isDragging && (activeEdgeX || activeEdgeY)) ? 1 : 0,
+            transition: 'opacity 180ms ease',
+            pointerEvents: 'none',
+            zIndex: 78,
+          }}/>
           {open && (
             <div onClick={()=>setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'transparent' }}/>
           )}
@@ -353,7 +418,7 @@
               zIndex: 80,
               transition: isDragging
                 ? 'none'
-                : 'left 320ms cubic-bezier(0.22, 1, 0.36, 1), top 320ms cubic-bezier(0.22, 1, 0.36, 1)',
+                : 'left 360ms cubic-bezier(0.22, 1, 0.36, 1), top 360ms cubic-bezier(0.22, 1, 0.36, 1)',
             }}>
             <div style={{
               position: 'absolute',
@@ -436,11 +501,19 @@
                 backdropFilter: 'blur(16px) saturate(1.2)',
                 WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
                 border: '1px solid var(--border)',
-                borderRadius: 999,
+                borderRadius: attachedRight
+                  ? '999px 0 0 999px'
+                  : attachedLeft
+                    ? '0 999px 999px 0'
+                    : attachedTop
+                      ? '0 0 999px 999px'
+                      : attachedBottom
+                        ? '999px 999px 0 0'
+                        : 999,
                 boxShadow: hover
-                  ? '0 8px 28px rgba(42,38,34,0.12), 0 2px 6px rgba(42,38,34,0.05)'
+                  ? '0 10px 30px rgba(42,38,34,0.12), 0 2px 6px rgba(42,38,34,0.05)'
                   : '0 2px 10px rgba(42,38,34,0.06), 0 1px 2px rgba(42,38,34,0.03)',
-                transition: 'box-shadow var(--d-base) var(--ease-out)',
+                transition: 'box-shadow var(--d-base) var(--ease-out), border-radius 280ms cubic-bezier(0.22, 1, 0.36, 1)',
               }}>
               <button
                 onPointerDown={onGripDown}
