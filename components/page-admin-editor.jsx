@@ -1,31 +1,4 @@
-/* global React, Icon, AdminShell, Loading */
-
-// Minimal markdown -> html renderer
-const renderMd = (src) => {
-  if (!src) return '';
-  let h = src
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  h = h.replace(/^### (.*)$/gm, '<h3>$1</h3>')
-       .replace(/^## (.*)$/gm, '<h2>$1</h2>')
-       .replace(/^# (.*)$/gm, '<h1>$1</h1>');
-  h = h.replace(/^> (.*)$/gm, '<blockquote>$1</blockquote>');
-  // Image: must come before link so ![alt](url) isn't caught as a link
-  h = h.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
-    (_, alt, url, title) => `<img src="${url}" alt="${alt || ''}"${title ? ` title="${title}"` : ''}/>`);
-  h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-       .replace(/\*(.+?)\*/g, '<em>$1</em>')
-       .replace(/`(.+?)`/g, '<code>$1</code>')
-       .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
-  h = h.split(/\n{2,}/).map(p => {
-    const t = p.trim();
-    if (/^<(h\d|blockquote|ul|ol)/.test(t)) return p;
-    // A paragraph that is just an image: render as a figure so the image
-    // becomes a proper block element without <p> wrapping around it.
-    if (/^<img\b[^>]*\/?>\s*$/.test(t)) return `<figure class="md-fig">${t}</figure>`;
-    return '<p>' + p.replace(/\n/g,'<br/>') + '</p>';
-  }).join('\n');
-  return h;
-};
+/* global React, Icon, AdminShell, Loading, renderMd */
 
 // Resize a pasted image so the embedded data URL doesn't balloon
 // the article payload. Keeps longest edge <= maxDim.
@@ -387,8 +360,13 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
               .md-preview em { color: var(--ink); }
               .md-preview code { background: var(--paper-2); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; color: var(--accent-deep); font-family: var(--mono); }
               .md-preview a { color: var(--accent); border-bottom: 1px solid currentColor; }
+              .md-preview h1 { font-size: 32px; margin: 40px 0 16px; color: var(--ink); font-weight: 500; letter-spacing: -0.01em; }
+              .md-preview hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+              .md-preview ul, .md-preview ol { margin: 0 0 20px; padding-left: 1.6em; }
+              .md-preview li { margin: 4px 0; }
               .md-preview .md-fig { margin: 28px 0; text-align: center; }
               .md-preview .md-fig img { display: block; margin: 0 auto; max-width: 100%; max-height: 480px; height: auto; width: auto; object-fit: contain; border-radius: 10px; box-shadow: 0 2px 14px rgba(20,20,20,0.08); background: var(--paper-2); }
+              .md-preview .md-fig figcaption { margin-top: 8px; font-family: var(--serif); font-style: italic; font-size: 12px; color: var(--ink-4); }
               .md-preview p img { display: inline-block; max-width: 100%; max-height: 1.4em; vertical-align: middle; border-radius: 4px; }
             `}</style>
           </div>

@@ -659,8 +659,92 @@ const Loading = ({ label = '加载中…' }) => (
   </div>
 );
 
+// ─────────────────────────────────────────────────────────
+// Markdown → HTML (shared by editor preview & article reader)
+//
+// Block types: headings, horizontal rule, blockquote, ul/ol,
+// image-only paragraph (→ <figure>), and regular paragraph.
+// Inline: image, link, bold, italic, code.
+// ─────────────────────────────────────────────────────────
+const renderMd = (src) => {
+  if (!src) return '';
+  const esc = (s) => String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // Only allow URL schemes that won't execute script
+  const safeUrl = (u) => /^(?:https?:|mailto:|data:image\/|\/|#)/i.test(u) ? u : '#';
+
+  const renderInline = (text) => {
+    let t = esc(text);
+    // Image — must come before link so ![..](..) isn't caught as a link
+    t = t.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
+      (_, alt, url, title) => {
+        const safe = safeUrl(url);
+        return `<img src="${safe}" alt="${alt || ''}"${title ? ` title="${title}"` : ''} loading="lazy"/>`;
+      });
+    // Link
+    t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,
+      (_, label, url) => `<a href="${safeUrl(url)}" target="_blank" rel="noopener">${label}</a>`);
+    // Bold / italic / code
+    t = t.replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>')
+         .replace(/\*([^*\n]+?)\*/g, '<em>$1</em>')
+         .replace(/`([^`\n]+?)`/g, '<code>$1</code>');
+    return t;
+  };
+
+  const blocks = src.replace(/\r\n/g, '\n').split(/\n{2,}/);
+
+  const out = blocks.map((block) => {
+    const lines = block.split('\n');
+    const t = block.trim();
+    if (!t) return '';
+
+    // Horizontal rule
+    if (/^(?:-{3,}|_{3,}|\*{3,})\s*$/.test(t)) return '<hr/>';
+
+    // Single-line heading
+    if (lines.length === 1) {
+      const hm = t.match(/^(#{1,6})\s+(.*)$/);
+      if (hm) return `<h${hm[1].length}>${renderInline(hm[2])}</h${hm[1].length}>`;
+    }
+
+    // Blockquote (every line prefixed with >)
+    if (lines.every((l) => /^>\s?/.test(l))) {
+      const inner = lines.map((l) => l.replace(/^>\s?/, '')).join(' ');
+      return `<blockquote>${renderInline(inner)}</blockquote>`;
+    }
+
+    // Unordered list
+    if (lines.every((l) => /^[-*+]\s+/.test(l))) {
+      const items = lines.map((l) => `<li>${renderInline(l.replace(/^[-*+]\s+/, ''))}</li>`).join('');
+      return `<ul>${items}</ul>`;
+    }
+
+    // Ordered list
+    if (lines.every((l) => /^\d+\.\s+/.test(l))) {
+      const items = lines.map((l) => `<li>${renderInline(l.replace(/^\d+\.\s+/, ''))}</li>`).join('');
+      return `<ol>${items}</ol>`;
+    }
+
+    // Image-only block → <figure> (with optional caption from alt/title)
+    const imgOnly = t.match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)$/);
+    if (imgOnly) {
+      const [, alt, url, title] = imgOnly;
+      const caption = title || alt;
+      const safe = safeUrl(url);
+      return `<figure class="md-fig"><img src="${safe}" alt="${esc(alt)}" loading="lazy"/>${caption ? `<figcaption>${esc(caption)}</figcaption>` : ''}</figure>`;
+    }
+
+    // Regular paragraph — soft line breaks become <br/>
+    return `<p>${renderInline(block).replace(/\n/g, '<br/>')}</p>`;
+  });
+
+  return out.filter(Boolean).join('\n');
+};
+
 Object.assign(window, {
   ARTICLES, AUTHORS, COMMENTS,
   Icon, Avatar, Cover, TopNav, PageTransition, TweaksPanel,
   formatDate, formatRelative, adaptArticle, EmptyState, Loading,
+  renderMd,
 });

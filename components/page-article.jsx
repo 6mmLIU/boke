@@ -1,4 +1,4 @@
-/* global React, Icon, Avatar, Cover, TopNav, EmptyState, Loading, formatDate, formatRelative, adaptArticle */
+/* global React, Icon, Avatar, Cover, TopNav, EmptyState, Loading, formatDate, formatRelative, adaptArticle, renderMd */
 
 const PageArticle = ({ onNav, articleId, user }) => {
   const [article, setArticle] = React.useState(null);
@@ -142,7 +142,7 @@ const PageArticle = ({ onNav, articleId, user }) => {
   }
 
   const a = article;
-  const paragraphs = (a.content || '').split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+  const bodyHtml = renderMd(a.content || '');
 
   return (
     <div>
@@ -190,56 +190,38 @@ const PageArticle = ({ onNav, articleId, user }) => {
           </div>
         </div>
 
-        <div className="article-body" style={{
-          fontFamily: 'var(--serif)', fontSize: 19, lineHeight: 1.85,
-          color: 'var(--ink-2)',
-        }}>
-          {paragraphs.length === 0 ? (
+        {bodyHtml ? (
+          <div className="article-body"
+            dangerouslySetInnerHTML={{ __html: bodyHtml }}/>
+        ) : (
+          <div className="article-body">
             <p style={{ color: 'var(--ink-4)' }}>（这篇文章还没有正文。）</p>
-          ) : paragraphs.map((p, i) => {
-            // Image-only paragraph (markdown ![alt](url)) → render as figure
-            const imgMatch = p.match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)\s*$/);
-            if (imgMatch) {
-              const [, alt, url, title] = imgMatch;
-              return (
-                <figure key={i} className="article-figure">
-                  <img src={url} alt={alt || ''} loading="lazy"/>
-                  {(title || alt) && <figcaption>{title || alt}</figcaption>}
-                </figure>
-              );
-            }
-            // First text paragraph: drop cap on first character
-            if (i === 0) {
-              const first = p.charAt(0);
-              const rest = p.slice(1);
-              return (
-                <p key={i} style={{ fontSize: 22, color: 'var(--ink)' }}>
-                  <span style={{
-                    float: 'left', fontFamily: 'var(--serif)', fontSize: 72, lineHeight: 0.85,
-                    marginRight: 12, marginTop: 8, color: 'var(--accent)',
-                  }}>{first}</span>
-                  {rest}
-                </p>
-              );
-            }
-            return <p key={i} style={{ marginBottom: 18, whiteSpace: 'pre-wrap' }}>{p}</p>;
-          })}
-        </div>
+          </div>
+        )}
         <style>{`
-          .article-figure { margin: 32px 0; text-align: center; }
-          .article-figure img {
-            display: block; margin: 0 auto;
-            max-width: 100%; max-height: 520px;
-            height: auto; width: auto;
-            object-fit: contain;
-            border-radius: 10px;
-            box-shadow: 0 2px 18px rgba(20,20,20,0.08);
-            background: var(--paper-2);
-          }
-          .article-figure figcaption {
-            margin-top: 10px;
-            font-family: var(--serif); font-style: italic;
-            font-size: 13px; color: var(--ink-4);
+          .article-body { font-family: var(--serif); font-size: 19px; line-height: 1.85; color: var(--ink-2); }
+          .article-body p { margin: 0 0 20px; }
+          .article-body h1 { font-size: 36px; margin: 48px 0 18px; color: var(--ink); font-weight: 500; letter-spacing: -0.01em; line-height: 1.25; }
+          .article-body h2 { font-size: 28px; margin: 40px 0 14px; color: var(--ink); font-weight: 500; letter-spacing: -0.005em; line-height: 1.3; }
+          .article-body h3 { font-size: 22px; margin: 32px 0 12px; color: var(--ink); font-weight: 500; }
+          .article-body h4, .article-body h5, .article-body h6 { font-size: 18px; margin: 24px 0 10px; color: var(--ink); font-weight: 500; }
+          .article-body blockquote { margin: 28px 0; padding: 14px 22px; border-left: 3px solid var(--accent); background: var(--accent-wash); font-style: italic; border-radius: 0 8px 8px 0; color: var(--ink-2); }
+          .article-body blockquote p:last-child { margin-bottom: 0; }
+          .article-body hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+          .article-body ul, .article-body ol { margin: 0 0 20px; padding-left: 1.8em; }
+          .article-body li { margin: 6px 0; }
+          .article-body strong { color: var(--ink); font-weight: 600; }
+          .article-body em { color: var(--ink); }
+          .article-body code { background: var(--paper-2); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; color: var(--accent-deep); font-family: var(--mono); }
+          .article-body a { color: var(--accent); border-bottom: 1px solid currentColor; }
+          .article-body .md-fig { margin: 32px 0; text-align: center; }
+          .article-body .md-fig img { display: block; margin: 0 auto; max-width: 100%; max-height: 520px; height: auto; width: auto; object-fit: contain; border-radius: 10px; box-shadow: 0 2px 18px rgba(20,20,20,0.08); background: var(--paper-2); }
+          .article-body .md-fig figcaption { margin-top: 10px; font-family: var(--serif); font-style: italic; font-size: 13px; color: var(--ink-4); }
+          /* Drop-cap on the first paragraph only */
+          .article-body > p:first-of-type { font-size: 22px; color: var(--ink); }
+          .article-body > p:first-of-type::first-letter {
+            float: left; font-family: var(--serif); font-size: 72px; line-height: 0.85;
+            margin: 8px 12px 0 0; color: var(--accent);
           }
         `}</style>
 
