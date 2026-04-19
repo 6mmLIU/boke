@@ -3,6 +3,33 @@
 // ─────────────────────────────────────────────────────────
 // Login / Register page — real API
 // ─────────────────────────────────────────────────────────
+
+// Hoisted out of PageAuth so React doesn't remount it on every keystroke
+// (which was causing the input to lose focus after one character).
+const Field = ({ name, label, type = 'text', placeholder, value, onChange, focused, onFocus, onBlur, autoComplete }) => (
+  <div style={{ position: 'relative', marginBottom: 18 }}>
+    <label style={{
+      position: 'absolute', left: 14,
+      top: (focused || value) ? -8 : 14,
+      fontSize: (focused || value) ? 11 : 14,
+      color: focused ? 'var(--accent)' : 'var(--ink-4)',
+      background: 'var(--surface)', padding: '0 6px',
+      transition: 'all 220ms var(--ease-out)',
+      pointerEvents: 'none',
+      fontFamily: 'var(--sans)',
+    }}>{label}</label>
+    <input
+      type={type} placeholder={focused ? placeholder : ''}
+      value={value}
+      onChange={onChange}
+      onFocus={onFocus} onBlur={onBlur}
+      className="input"
+      style={{ background: 'var(--surface)', fontFamily: 'var(--sans)' }}
+      autoComplete={autoComplete}
+    />
+  </div>
+);
+
 const PageAuth = ({ onNav }) => {
   const [mode, setMode] = React.useState('login'); // 'login' | 'register'
   const [focused, setFocused] = React.useState(null);
@@ -54,28 +81,18 @@ const PageAuth = ({ onNav }) => {
     }
   };
 
-  const Field = ({ name, label, type = 'text', placeholder }) => (
-    <div style={{ position: 'relative', marginBottom: 18 }}>
-      <label style={{
-        position: 'absolute', left: 14,
-        top: (focused === name || values[name]) ? -8 : 14,
-        fontSize: (focused === name || values[name]) ? 11 : 14,
-        color: focused === name ? 'var(--accent)' : 'var(--ink-4)',
-        background: 'var(--surface)', padding: '0 6px',
-        transition: 'all 220ms var(--ease-out)',
-        pointerEvents: 'none',
-        fontFamily: 'var(--sans)',
-      }}>{label}</label>
-      <input
-        type={type} placeholder={focused === name ? placeholder : ''}
-        value={values[name]}
-        onChange={e=>setValues(v=>({...v, [name]: e.target.value}))}
-        onFocus={()=>setFocused(name)} onBlur={()=>setFocused(null)}
-        className="input" style={{ background: 'var(--surface)' }}
-        autoComplete={type === 'password' ? (mode === 'register' ? 'new-password' : 'current-password') : (name === 'email' ? 'email' : 'off')}
-      />
-    </div>
-  );
+  const fieldProps = (name, type = 'text') => ({
+    name,
+    type,
+    value: values[name],
+    focused: focused === name,
+    onChange: (e) => setValues(v => ({ ...v, [name]: e.target.value })),
+    onFocus: () => setFocused(name),
+    onBlur: () => setFocused(null),
+    autoComplete: type === 'password'
+      ? (mode === 'register' ? 'new-password' : 'current-password')
+      : (name === 'email' ? 'email' : 'off'),
+  });
 
   return (
     <div style={{
@@ -146,6 +163,7 @@ const PageAuth = ({ onNav }) => {
                 position: 'relative', zIndex: 1,
                 padding: '8px 32px',
                 background: 'transparent', border: 'none',
+                fontFamily: 'var(--sans)',
                 fontSize: 14, fontWeight: 500, cursor: 'pointer',
                 color: mode === t.k ? 'var(--ink)' : 'var(--ink-3)',
                 transition: 'color 200ms',
@@ -167,10 +185,10 @@ const PageAuth = ({ onNav }) => {
               overflow: 'hidden',
               transition: 'all 400ms var(--ease-out)',
             }}>
-              <Field name="name" label="笔名 / Pen Name" placeholder="例如:沈既白"/>
+              <Field {...fieldProps('name')} label="笔名 / Pen Name" placeholder="例如:沈既白"/>
             </div>
-            <Field name="email" label="邮箱 / Email" placeholder="you@example.com"/>
-            <Field name="password" label="密码 / Password" type="password" placeholder="至少 8 位"/>
+            <Field {...fieldProps('email')} label="邮箱 / Email" placeholder="you@example.com"/>
+            <Field {...fieldProps('password', 'password')} label="密码 / Password" placeholder="至少 8 位"/>
 
             {error && (
               <div style={{
@@ -196,6 +214,7 @@ const PageAuth = ({ onNav }) => {
 
             <button type="submit" className="btn btn-primary" style={{
               width: '100%', justifyContent: 'center', padding: '13px',
+              fontFamily: 'var(--sans)',
               fontSize: 15, position: 'relative', overflow: 'hidden',
             }} disabled={loading}>
               {loading ? (
@@ -245,6 +264,7 @@ const PageAuth = ({ onNav }) => {
             ].map(p => (
               <button key={p.name} className="btn" style={{
                 flex: 1, justifyContent: 'center', fontSize: 13, gap: 8,
+                fontFamily: 'var(--sans)',
                 color: 'var(--ink-2)',
               }} title="第三方登录暂未启用" disabled>
                 {p.icon}
