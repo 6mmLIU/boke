@@ -183,6 +183,7 @@
     function FloatingDock({ page, user, setPage, tweaksOpen, openTweaks }) {
       const dockRef = useRef(null);
       const dragRef = useRef(null);
+      const SNAP_DISTANCE = 28;
       const [open, setOpen] = useState(false);
       const [hover, setHover] = useState(false);
       const [position, setPosition] = useState(() => {
@@ -214,17 +215,37 @@
 
       const current = items.find((item) => item.k === page) || { l: '关于', le: 'About' };
 
-      useEffect(() => {
-        const clamp = (next) => {
-          const rect = dockRef.current?.getBoundingClientRect();
-          const width = rect?.width || 240;
-          const height = rect?.height || 50;
-          return {
-            x: Math.min(Math.max(12, next.x), window.innerWidth - width - 12),
-            y: Math.min(Math.max(12, next.y), window.innerHeight - height - 12),
-          };
+      const getDockMetrics = () => {
+        const rect = dockRef.current?.getBoundingClientRect();
+        return {
+          width: rect?.width || 240,
+          height: rect?.height || 50,
         };
+      };
 
+      const clampPosition = (next) => {
+        const { width, height } = getDockMetrics();
+        return {
+          x: Math.min(Math.max(0, next.x), window.innerWidth - width),
+          y: Math.min(Math.max(0, next.y), window.innerHeight - height),
+        };
+      };
+
+      const snapPosition = (next) => {
+        const { width, height } = getDockMetrics();
+        const maxX = window.innerWidth - width;
+        const maxY = window.innerHeight - height;
+        const snapped = clampPosition(next);
+
+        if (snapped.x <= SNAP_DISTANCE) snapped.x = 0;
+        if (maxX - snapped.x <= SNAP_DISTANCE) snapped.x = maxX;
+        if (snapped.y <= SNAP_DISTANCE) snapped.y = 0;
+        if (maxY - snapped.y <= SNAP_DISTANCE) snapped.y = maxY;
+
+        return snapped;
+      };
+
+      useEffect(() => {
         if (!dockRef.current) return;
 
         const rect = dockRef.current.getBoundingClientRect();
@@ -233,7 +254,7 @@
           y: Math.max(16, window.innerHeight - rect.height - 24),
         };
 
-        setPosition((prev) => clamp(prev || fallback));
+        setPosition((prev) => snapPosition(prev || fallback));
       }, []);
 
       useEffect(() => {
@@ -242,31 +263,24 @@
       }, [position]);
 
       useEffect(() => {
-        const clamp = (next) => {
-          const rect = dockRef.current?.getBoundingClientRect();
-          const width = rect?.width || 240;
-          const height = rect?.height || 50;
-          return {
-            x: Math.min(Math.max(12, next.x), window.innerWidth - width - 12),
-            y: Math.min(Math.max(12, next.y), window.innerHeight - height - 12),
-          };
-        };
-
         const onMove = (event) => {
           if (!dragRef.current) return;
           event.preventDefault();
-          setPosition(clamp({
+          setPosition(clampPosition({
             x: event.clientX - dragRef.current.dx,
             y: event.clientY - dragRef.current.dy,
           }));
         };
 
         const onUp = () => {
+          if (dragRef.current) {
+            setPosition((prev) => prev ? snapPosition(prev) : prev);
+          }
           dragRef.current = null;
         };
 
         const onResize = () => {
-          setPosition((prev) => prev ? clamp(prev) : prev);
+          setPosition((prev) => prev ? snapPosition(prev) : prev);
         };
 
         window.addEventListener('pointermove', onMove);
