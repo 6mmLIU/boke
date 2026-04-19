@@ -183,9 +183,12 @@
     function FloatingDock({ page, user, setPage, tweaksOpen, openTweaks }) {
       const dockRef = useRef(null);
       const dragRef = useRef(null);
-      const SNAP_DISTANCE = 28;
+      const SNAP_DISTANCE = 56;
+      const MAGNET_DISTANCE = 96;
+      const MAGNET_STRENGTH = 0.36;
       const [open, setOpen] = useState(false);
       const [hover, setHover] = useState(false);
+      const [isDragging, setIsDragging] = useState(false);
       const [position, setPosition] = useState(() => {
         try {
           const raw = localStorage.getItem('inkwell.dock.position');
@@ -231,6 +234,34 @@
         };
       };
 
+      const attractToEdges = (next) => {
+        const { width, height } = getDockMetrics();
+        const maxX = window.innerWidth - width;
+        const maxY = window.innerHeight - height;
+        const clamped = clampPosition(next);
+
+        const easeAxis = (value, max) => {
+          const distStart = value;
+          const distEnd = max - value;
+          let result = value;
+
+          if (distStart <= distEnd && distStart < MAGNET_DISTANCE) {
+            const pull = 1 - distStart / MAGNET_DISTANCE;
+            result -= distStart * pull * MAGNET_STRENGTH;
+          } else if (distEnd < MAGNET_DISTANCE) {
+            const pull = 1 - distEnd / MAGNET_DISTANCE;
+            result += distEnd * pull * MAGNET_STRENGTH;
+          }
+
+          return result;
+        };
+
+        return clampPosition({
+          x: easeAxis(clamped.x, maxX),
+          y: easeAxis(clamped.y, maxY),
+        });
+      };
+
       const snapPosition = (next) => {
         const { width, height } = getDockMetrics();
         const maxX = window.innerWidth - width;
@@ -266,7 +297,7 @@
         const onMove = (event) => {
           if (!dragRef.current) return;
           event.preventDefault();
-          setPosition(clampPosition({
+          setPosition(attractToEdges({
             x: event.clientX - dragRef.current.dx,
             y: event.clientY - dragRef.current.dy,
           }));
@@ -276,6 +307,7 @@
           if (dragRef.current) {
             setPosition((prev) => prev ? snapPosition(prev) : prev);
           }
+          setIsDragging(false);
           dragRef.current = null;
         };
 
@@ -297,6 +329,7 @@
         if (!position) return;
         event.preventDefault();
         setOpen(false);
+        setIsDragging(true);
         dragRef.current = {
           dx: event.clientX - position.x,
           dy: event.clientY - position.y,
@@ -318,6 +351,9 @@
               left: position.x,
               top: position.y,
               zIndex: 80,
+              transition: isDragging
+                ? 'none'
+                : 'left 320ms cubic-bezier(0.22, 1, 0.36, 1), top 320ms cubic-bezier(0.22, 1, 0.36, 1)',
             }}>
             <div style={{
               position: 'absolute',
