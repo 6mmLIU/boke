@@ -37,7 +37,12 @@ app.use(cors({
 // 请求体解析
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
+app.use('/uploads', (req, res, next) => {
+  // Uploaded images are rendered by the editor preview and article pages,
+  // which may run on a different localhost port during development.
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static(path.resolve(__dirname, '../uploads')));
 
 // 限流
 const limiter = rateLimit({

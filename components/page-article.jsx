@@ -220,6 +220,7 @@ const PageArticle = ({ onNav, articleId, user }) => {
           .article-body hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
           .article-body ul, .article-body ol { margin: 0 0 20px; padding-left: 1.8em; }
           .article-body li { margin: 6px 0; }
+          .article-body .md-center { margin: 32px 0; text-align: center; color: var(--ink); }
           .article-body strong { color: var(--ink); font-weight: 600; }
           .article-body em { color: var(--ink); }
           .article-body code { background: var(--paper-2); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; color: var(--accent-deep); font-family: var(--mono); }

@@ -135,6 +135,7 @@ const Icon = ({ name, size = 18, style = {} }) => {
     code: <><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></>,
     quote: <><path d="M7 7h4v6H5v-3c0-2 1-3 2-3zM15 7h4v6h-6v-3c0-2 1-3 2-3z"/></>,
     list: <><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></>,
+    alignCenter: <><path d="M4 6h16"/><path d="M7 10h10"/><path d="M4 14h16"/><path d="M7 18h10"/></>,
     more: <><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></>,
     edit: <><path d="M11 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L13 14l-4 1 1-4 8.5-8.5z"/></>,
     trash: <><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/></>,
@@ -667,7 +668,7 @@ const Loading = ({ label = '加载中…' }) => (
 // Markdown → HTML (shared by editor preview & article reader)
 //
 // Block types: headings, horizontal rule, blockquote, ul/ol,
-// image-only paragraph (→ <figure>), and regular paragraph.
+// image-only paragraph (→ <figure>), center blocks, and regular paragraph.
 // Inline: image, link, bold, italic, code.
 // ─────────────────────────────────────────────────────────
 const renderMd = (src) => {
@@ -737,6 +738,15 @@ const renderMd = (src) => {
       const caption = title || alt;
       const safe = safeUrl(url);
       return `<figure class="md-fig"><img src="${safe}" alt="${esc(alt)}" loading="lazy"/>${caption ? `<figcaption>${esc(caption)}</figcaption>` : ''}</figure>`;
+    }
+
+    // Centered block:
+    // :::center
+    // text
+    // :::
+    const center = t.match(/^:::\s*center\s*\n([\s\S]+)\n:::\s*$/i);
+    if (center) {
+      return `<div class="md-center">${renderInline(center[1]).replace(/\n/g, '<br/>')}</div>`;
     }
 
     // Regular paragraph — soft line breaks become <br/>

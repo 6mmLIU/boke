@@ -163,6 +163,21 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
     }, 0);
   };
 
+  const wrapBlock = (before, after, placeholder = '') => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const { selectionStart: s, selectionEnd: e, value } = ta;
+    const sel = value.slice(s, e);
+    const body = sel || placeholder;
+    const next = value.slice(0, s) + before + body + after + value.slice(e);
+    setContent(next);
+    setTimeout(() => {
+      ta.focus();
+      ta.selectionStart = s + before.length;
+      ta.selectionEnd = s + before.length + body.length;
+    }, 0);
+  };
+
   // Drop `text` at the cursor, collapsing the selection. Safe to call
   // from async handlers — reads the live textarea state each time.
   const insertAtCursor = (text) => {
@@ -324,6 +339,7 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
     { k: 'b', icon: 'bold',   a: ()=>insert('**','**'), title: '粗体' },
     { k: 'i', icon: 'italic', a: ()=>insert('*','*'),   title: '斜体' },
     { k: 'h', icon: 'doc',    a: ()=>insert('## '),     title: '标题' },
+    { k: 'ac', icon: 'alignCenter', a: ()=>wrapBlock('\n\n:::center\n', '\n:::\n\n', '要居中的文字'), title: '居中' },
     { k: 'q', icon: 'quote',  a: ()=>insert('> '),      title: '引用' },
     { k: 'l', icon: 'list',   a: ()=>insert('- '),      title: '列表' },
     { k: 'k', icon: 'link',   a: ()=>insert('[','](url)'), title: '链接' },
@@ -678,6 +694,7 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
               .md-preview hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
               .md-preview ul, .md-preview ol { margin: 0 0 20px; padding-left: 1.6em; }
               .md-preview li { margin: 4px 0; }
+              .md-preview .md-center { margin: 28px 0; text-align: center; color: var(--ink); }
               .md-preview .md-fig { margin: 28px 0; text-align: center; }
               .md-preview .md-fig img { display: block; margin: 0 auto; max-width: 100%; max-height: 480px; height: auto; width: auto; object-fit: contain; border-radius: 10px; box-shadow: 0 2px 14px rgba(20,20,20,0.08); background: var(--paper-2); }
               .md-preview .md-fig figcaption { margin-top: 8px; font-family: var(--serif); font-style: italic; font-size: 12px; color: var(--ink-4); }
