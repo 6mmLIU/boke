@@ -9,16 +9,55 @@ const renderMd = (src) => {
        .replace(/^## (.*)$/gm, '<h2>$1</h2>')
        .replace(/^# (.*)$/gm, '<h1>$1</h1>');
   h = h.replace(/^> (.*)$/gm, '<blockquote>$1</blockquote>');
+  // Image: must come before link so ![alt](url) isn't caught as a link
+  h = h.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
+    (_, alt, url, title) => `<img src="${url}" alt="${alt || ''}"${title ? ` title="${title}"` : ''}/>`);
   h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
        .replace(/\*(.+?)\*/g, '<em>$1</em>')
        .replace(/`(.+?)`/g, '<code>$1</code>')
        .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
   h = h.split(/\n{2,}/).map(p => {
-    if (/^<(h\d|blockquote|ul|ol)/.test(p.trim())) return p;
+    const t = p.trim();
+    if (/^<(h\d|blockquote|ul|ol)/.test(t)) return p;
+    // A paragraph that is just an image: render as a figure so the image
+    // becomes a proper block element without <p> wrapping around it.
+    if (/^<img\b[^>]*\/?>\s*$/.test(t)) return `<figure class="md-fig">${t}</figure>`;
     return '<p>' + p.replace(/\n/g,'<br/>') + '</p>';
   }).join('\n');
   return h;
 };
+
+// Resize a pasted image so the embedded data URL doesn't balloon
+// the article payload. Keeps longest edge <= maxDim.
+const compressImageToDataUrl = (file, maxDim = 1600, quality = 0.85) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('读取图片失败'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('图片解码失败'));
+      img.onload = () => {
+        let { width: w, height: h } = img;
+        if (w > maxDim || h > maxDim) {
+          const r = Math.min(maxDim / w, maxDim / h);
+          w = Math.round(w * r); h = Math.round(h * r);
+        }
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          // Preserve transparency for PNG; JPEG otherwise for smaller size.
+          const out = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+          resolve(canvas.toDataURL(out, quality));
+        } catch (e) { reject(e); }
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+const IMG_URL_RE = /^https?:\/\/\S+\.(?:png|jpe?g|gif|webp|svg|avif|bmp)(?:\?\S*)?$/i;
 
 const COVER_OPTIONS = [
   { k: 'warm',   l: '赤陶', c: '#C5704A' },
@@ -78,6 +117,68 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
     }, 0);
   };
 
+  // Drop `text` at the cursor, collapsing the selection. Safe to call
+  // from async handlers — reads the live textarea state each time.
+  const insertAtCursor = (text) => {
+    const ta = taRef.current;
+    if (!ta) { setContent(c => c + text); return; }
+    const { selectionStart: s, selectionEnd: e, value } = ta;
+    const next = value.slice(0, s) + text + value.slice(e);
+    setContent(next);
+    setTimeout(() => {
+      ta.focus();
+      const pos = s + text.length;
+      ta.selectionStart = ta.selectionEnd = pos;
+    }, 0);
+  };
+
+  const handlePasteImage = async (file) => {
+    try {
+      const dataUrl = await compressImageToDataUrl(file);
+      insertAtCursor(`\n\n![](${dataUrl})\n\n`);
+    } catch (err) {
+      setError(err.message || '图片处理失败');
+    }
+  };
+
+  const onContentPaste = (e) => {
+    const cd = e.clipboardData;
+    if (!cd) return;
+
+    // 1) Local image file in clipboard (screenshot, copied file, etc.)
+    const items = Array.from(cd.items || []);
+    const imgItem = items.find(it => it.kind === 'file' && it.type.startsWith('image/'));
+    if (imgItem) {
+      const file = imgItem.getAsFile();
+      if (file) {
+        e.preventDefault();
+        handlePasteImage(file);
+        return;
+      }
+    }
+
+    // 2) Copied image from a web page — clipboard usually carries HTML
+    //    with the <img> tag. Extract src and insert as markdown.
+    const html = cd.getData && cd.getData('text/html');
+    if (html) {
+      const m = html.match(/<img[^>]+src=["']([^"']+)["'][^>]*>/i);
+      if (m && /^https?:\/\//i.test(m[1])) {
+        e.preventDefault();
+        insertAtCursor(`\n\n![](${m[1]})\n\n`);
+        return;
+      }
+    }
+
+    // 3) Pasted plain text that is itself an image URL.
+    const txt = cd.getData && cd.getData('text/plain');
+    if (txt && IMG_URL_RE.test(txt.trim())) {
+      e.preventDefault();
+      insertAtCursor(`\n\n![](${txt.trim()})\n\n`);
+      return;
+    }
+    // Otherwise fall through to default paste (text).
+  };
+
   const tools = [
     { k: 'b', icon: 'bold',   a: ()=>insert('**','**'), title: '粗体' },
     { k: 'i', icon: 'italic', a: ()=>insert('*','*'),   title: '斜体' },
@@ -85,7 +186,10 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
     { k: 'q', icon: 'quote',  a: ()=>insert('> '),      title: '引用' },
     { k: 'l', icon: 'list',   a: ()=>insert('- '),      title: '列表' },
     { k: 'k', icon: 'link',   a: ()=>insert('[','](url)'), title: '链接' },
-    { k: 'm', icon: 'image',  a: ()=>insert('![alt](','url)'), title: '图片' },
+    { k: 'm', icon: 'image',  a: ()=>{
+        const url = window.prompt('图片链接(或直接在正文 Ctrl/⌘-V 粘贴图片):', '');
+        if (url && url.trim()) insertAtCursor(`\n\n![](${url.trim()})\n\n`);
+      }, title: '图片 — 可直接粘贴' },
     { k: 'c', icon: 'code',   a: ()=>insert('`','`'),   title: '代码' },
   ];
 
@@ -252,7 +356,8 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
               <textarea
                 ref={taRef}
                 value={content} onChange={e=>setContent(e.target.value)}
-                placeholder="从一个清澈的句子开始…"
+                onPaste={onContentPaste}
+                placeholder="从一个清澈的句子开始…(可直接粘贴图片)"
                 style={{
                   width: '100%', minHeight: 400, border: 'none', outline: 'none', resize: 'none',
                   background: 'transparent', fontFamily: 'var(--mono)', fontSize: 14,
@@ -282,6 +387,9 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
               .md-preview em { color: var(--ink); }
               .md-preview code { background: var(--paper-2); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; color: var(--accent-deep); font-family: var(--mono); }
               .md-preview a { color: var(--accent); border-bottom: 1px solid currentColor; }
+              .md-preview .md-fig { margin: 28px 0; text-align: center; }
+              .md-preview .md-fig img { display: block; margin: 0 auto; max-width: 100%; max-height: 480px; height: auto; width: auto; object-fit: contain; border-radius: 10px; box-shadow: 0 2px 14px rgba(20,20,20,0.08); background: var(--paper-2); }
+              .md-preview p img { display: inline-block; max-width: 100%; max-height: 1.4em; vertical-align: middle; border-radius: 4px; }
             `}</style>
           </div>
         </div>

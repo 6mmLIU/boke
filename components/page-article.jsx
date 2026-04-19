@@ -190,14 +190,25 @@ const PageArticle = ({ onNav, articleId, user }) => {
           </div>
         </div>
 
-        <div style={{
+        <div className="article-body" style={{
           fontFamily: 'var(--serif)', fontSize: 19, lineHeight: 1.85,
           color: 'var(--ink-2)',
         }}>
           {paragraphs.length === 0 ? (
             <p style={{ color: 'var(--ink-4)' }}>（这篇文章还没有正文。）</p>
           ) : paragraphs.map((p, i) => {
-            // First paragraph: drop cap on first character
+            // Image-only paragraph (markdown ![alt](url)) → render as figure
+            const imgMatch = p.match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)\s*$/);
+            if (imgMatch) {
+              const [, alt, url, title] = imgMatch;
+              return (
+                <figure key={i} className="article-figure">
+                  <img src={url} alt={alt || ''} loading="lazy"/>
+                  {(title || alt) && <figcaption>{title || alt}</figcaption>}
+                </figure>
+              );
+            }
+            // First text paragraph: drop cap on first character
             if (i === 0) {
               const first = p.charAt(0);
               const rest = p.slice(1);
@@ -214,6 +225,23 @@ const PageArticle = ({ onNav, articleId, user }) => {
             return <p key={i} style={{ marginBottom: 18, whiteSpace: 'pre-wrap' }}>{p}</p>;
           })}
         </div>
+        <style>{`
+          .article-figure { margin: 32px 0; text-align: center; }
+          .article-figure img {
+            display: block; margin: 0 auto;
+            max-width: 100%; max-height: 520px;
+            height: auto; width: auto;
+            object-fit: contain;
+            border-radius: 10px;
+            box-shadow: 0 2px 18px rgba(20,20,20,0.08);
+            background: var(--paper-2);
+          }
+          .article-figure figcaption {
+            margin-top: 10px;
+            font-family: var(--serif); font-style: italic;
+            font-size: 13px; color: var(--ink-4);
+          }
+        `}</style>
 
         {/* Action bar (sticky bottom-floating) */}
         <div style={{
