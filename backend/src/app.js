@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -9,6 +10,8 @@ const oauthRoutes = require('./routes/oauth');
 const articleRoutes = require('./routes/articles');
 const commentRoutes = require('./routes/comments');
 const adminRoutes = require('./routes/admin');
+const userRoutes = require('./routes/users');
+const uploadRoutes = require('./routes/uploads');
 
 const app = express();
 
@@ -34,6 +37,7 @@ app.use(cors({
 // 请求体解析
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 
 // 限流
 const limiter = rateLimit({
@@ -58,6 +62,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/articles', articleRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/uploads', uploadRoutes);
 
 // 健康检查
 app.get('/api/health', (req, res) => {

@@ -4,12 +4,15 @@
 // Admin shell — sidebar + content
 // ─────────────────────────────────────────────────────────
 const AdminShell = ({ active, onNav, user, children }) => {
+  const u = user || (window.Auth && window.Auth.user) || null;
   const items = [
     { k: 'admin', l: '概览', le: 'Overview', icon: 'chart' },
     { k: 'admin-articles', l: '文章', le: 'Articles', icon: 'doc' },
     { k: 'admin-editor', l: '写作', le: 'Write', icon: 'feather' },
   ];
-  const u = user || (window.Auth && window.Auth.user) || null;
+  if (u && u.role === 'ADMIN') {
+    items.push({ k: 'admin-users', l: '平台', le: 'Admin', icon: 'user' });
+  }
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '248px 1fr', minHeight: '100vh', background: 'var(--paper)' }}>
       <aside style={{

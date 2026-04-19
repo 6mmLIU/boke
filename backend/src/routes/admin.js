@@ -1,6 +1,6 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, ensureAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -235,7 +235,13 @@ router.get('/articles', authenticate, ensureAuthor, async (req, res, next) => {
         orderBy: { createdAt: 'desc' },
         skip,
         take: limitNum,
-        include: {
+        select: {
+          id: true,
+          title: true,
+          cover: true,
+          views: true,
+          readTime: true,
+          createdAt: true,
           _count: {
             select: {
               likes: true,
@@ -356,6 +362,214 @@ router.delete('/comments/:id', authenticate, async (req, res, next) => {
     });
 
     res.json({ message: '评论已删除' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @GET /api/admin/users
+// @desc 平台管理员查看所有用户
+router.get('/users', authenticate, ensureAdmin, async (req, res, next) => {
+  try {
+    const {
+      q = '',
+      limit = 20,
+    } = req.query;
+
+    const limitNum = Math.max(1, Math.min(50, parseInt(limit)));
+    const keyword = String(q || '').trim();
+    const where = keyword ? {
+      OR: [
+        { name: { contains: keyword, mode: 'insensitive' } },
+        { email: { contains: keyword, mode: 'insensitive' } },
+        { handle: { contains: keyword, mode: 'insensitive' } },
+      ],
+    } : {};
+
+    const users = await prisma.user.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limitNum,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        handle: true,
+        previousHandle: true,
+        bio: true,
+        avatar: true,
+        role: true,
+        isBanned: true,
+        bannedAt: true,
+        bannedReason: true,
+        handleChangedAt: true,
+        createdAt: true,
+        _count: {
+          select: {
+            articles: true,
+            comments: true,
+            followers: true,
+          },
+        },
+      },
+    });
+
+    const enrichedUsers = await Promise.all(users.map(async (user) => {
+      const [viewsAggregate, likesCount, commentsCount, recentArticles] = await Promise.all([
+        prisma.article.aggregate({
+          where: { authorId: user.id },
+          _sum: { views: true },
+        }),
+        prisma.like.count({
+          where: {
+            article: {
+              authorId: user.id,
+            },
+          },
+        }),
+        prisma.comment.count({
+          where: {
+            article: {
+              authorId: user.id,
+            },
+          },
+        }),
+        prisma.article.findMany({
+          where: { authorId: user.id },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          select: {
+            id: true,
+            title: true,
+            cover: true,
+            views: true,
+            readTime: true,
+            createdAt: true,
+            _count: {
+              select: {
+                likes: true,
+                comments: true,
+              },
+            },
+          },
+        }),
+      ]);
+
+      return {
+        ...user,
+        stats: {
+          articles: user._count.articles,
+          comments: commentsCount,
+          likes: likesCount,
+          followers: user._count.followers,
+          views: viewsAggregate._sum.views ?? 0,
+        },
+        recentArticles: recentArticles.map((article) => ({
+          ...article,
+          likes: article._count.likes,
+          comments: article._count.comments,
+          _count: undefined,
+        })),
+        _count: undefined,
+      };
+    }));
+
+    enrichedUsers.sort((a, b) => {
+      if (a.role === b.role) return new Date(b.createdAt) - new Date(a.createdAt);
+      return a.role === 'ADMIN' ? -1 : 1;
+    });
+
+    res.json({
+      users: enrichedUsers,
+      summary: {
+        totalUsers: enrichedUsers.length,
+        totalArticles: enrichedUsers.reduce((sum, user) => sum + user.stats.articles, 0),
+        bannedUsers: enrichedUsers.filter((user) => user.isBanned).length,
+        admins: enrichedUsers.filter((user) => user.role === 'ADMIN').length,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/users/:id/ban', authenticate, ensureAdmin, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 120) : '';
+
+    if (id === req.user.id) {
+      return res.status(400).json({ error: '不能封禁当前管理员自己' });
+    }
+
+    const target = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        role: true,
+        isBanned: true,
+      },
+    });
+
+    if (!target) {
+      return res.status(404).json({ error: '用户不存在' });
+    }
+    if (target.role === 'ADMIN') {
+      return res.status(403).json({ error: '不能封禁其他管理员' });
+    }
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: {
+        isBanned: true,
+        bannedAt: new Date(),
+        bannedReason: reason || null,
+      },
+      select: {
+        id: true,
+        isBanned: true,
+        bannedAt: true,
+        bannedReason: true,
+      },
+    });
+
+    res.json({ user, message: '用户已封禁' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/users/:id/unban', authenticate, ensureAdmin, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const target = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!target) {
+      return res.status(404).json({ error: '用户不存在' });
+    }
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: {
+        isBanned: false,
+        bannedAt: null,
+        bannedReason: null,
+      },
+      select: {
+        id: true,
+        isBanned: true,
+        bannedAt: true,
+        bannedReason: true,
+      },
+    });
+
+    res.json({ user, message: '用户已解封' });
   } catch (error) {
     next(error);
   }

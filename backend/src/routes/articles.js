@@ -2,6 +2,7 @@ const express = require('express');
 const { z } = require('zod');
 const { PrismaClient } = require('@prisma/client');
 const { authenticate, optionalAuth } = require('../middleware/auth');
+const { normalizeHandle } = require('../lib/users');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -44,8 +45,14 @@ router.get('/', optionalAuth, async (req, res, next) => {
     }
 
     if (author) {
-      const authorUser = await prisma.user.findUnique({
-        where: { handle: author },
+      const authorHandle = normalizeHandle(author);
+      const authorUser = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { handle: authorHandle },
+            { previousHandle: authorHandle },
+          ],
+        },
       });
 
       if (authorUser) {
@@ -85,7 +92,16 @@ router.get('/', optionalAuth, async (req, res, next) => {
         skip,
         take: limitNum,
         orderBy,
-        include: {
+        select: {
+          id: true,
+          title: true,
+          titleEn: true,
+          excerpt: true,
+          cover: true,
+          tags: true,
+          views: true,
+          readTime: true,
+          createdAt: true,
           author: {
             select: {
               id: true,

@@ -1,10 +1,18 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const { z } = require('zod');
 const { PrismaClient } = require('@prisma/client');
-const { generateToken, JWT_SECRET } = require('../middleware/auth');
+const {
+  generateToken,
+  rejectBannedUser,
+  loadUserFromToken,
+} = require('../middleware/auth');
 const { sendVerificationCode, isConfigured: smtpConfigured } = require('../lib/mailer');
+const {
+  AUTH_USER_SELECT,
+  buildUniqueHandle,
+  ensureAdminBootstrap,
+} = require('../lib/users');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -112,24 +120,11 @@ router.post('/register', async (req, res, next) => {
       return res.status(409).json({ error: '邮箱已被注册' });
     }
 
-    // 生成handle（用于URL的用户名）
-    let handle = name.toLowerCase().replace(/\s+/g, '-');
-    handle = handle.replace(/[^a-z0-9_-]/g, '');
-    if (!handle) {
-      // 名字里全是非 ASCII 字符（如纯中文），用随机后缀兜底
-      handle = 'user-' + Math.random().toString(36).slice(2, 8);
-    }
-
-    // 确保handle唯一
-    let uniqueHandle = handle;
-    let counter = 1;
-    while (await prisma.user.findUnique({ where: { handle: uniqueHandle } })) {
-      uniqueHandle = `${handle}-${counter}`;
-      counter++;
-    }
+    const uniqueHandle = await buildUniqueHandle(prisma, name);
 
     // 哈希密码
     const hashedPassword = await bcrypt.hash(password, 10);
+    const existingUserCount = await prisma.user.count();
 
     // 创建用户 + 标记验证码已用 (在事务里)
     const user = await prisma.$transaction(async (tx) => {
@@ -139,16 +134,9 @@ router.post('/register', async (req, res, next) => {
           password: hashedPassword,
           name,
           handle: uniqueHandle,
+          role: existingUserCount === 0 ? 'ADMIN' : 'USER',
         },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          handle: true,
-          bio: true,
-          avatar: true,
-          createdAt: true,
-        },
+        select: AUTH_USER_SELECT,
       });
       await tx.emailVerificationCode.update({
         where: { id: codeRow.id },
@@ -191,6 +179,12 @@ router.post('/login', async (req, res, next) => {
     if (!user) {
       return res.status(401).json({ error: '邮箱或密码错误' });
     }
+    if (!user.password) {
+      return res.status(400).json({ error: '该账户已绑定第三方登录，请使用对应方式登录' });
+    }
+    if (user.isBanned) {
+      return rejectBannedUser(res, user);
+    }
 
     // 验证密码
     const isPasswordValid = await bcrypt.compare(password, user.password);
@@ -199,21 +193,15 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ error: '邮箱或密码错误' });
     }
 
+    await ensureAdminBootstrap(prisma, user.id);
+
     // 生成token
     const token = generateToken(user.id);
 
     // 获取用户信息（不包含密码）
     const userInfo = await prisma.user.findUnique({
       where: { id: user.id },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        handle: true,
-        bio: true,
-        avatar: true,
-        createdAt: true,
-      },
+      select: AUTH_USER_SELECT,
     });
 
     res.json({
@@ -243,23 +231,13 @@ router.get('/me', async (req, res, next) => {
     }
 
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, JWT_SECRET);
-
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        handle: true,
-        bio: true,
-        avatar: true,
-        createdAt: true,
-      },
-    });
+    const user = await loadUserFromToken(token);
 
     if (!user) {
       return res.status(401).json({ error: '用户不存在' });
+    }
+    if (user.isBanned) {
+      return rejectBannedUser(res, user);
     }
 
     res.json({ user });

@@ -310,8 +310,12 @@ const TopNav = ({ active, onNav, user }) => {
                 <div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>@{u.handle}</div>
               </div>
-              <button onClick={()=>{setMenuOpen(false); onNav && onNav('profile');}} style={menuItemStyle}>个人书房</button>
-              <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin');}} style={menuItemStyle}>后台 · Studio</button>
+              <button onClick={()=>{setMenuOpen(false); onNav && onNav('profile');}} style={menuItemStyle}>我的书房</button>
+              <button onClick={()=>{setMenuOpen(false); onNav && onNav('author', u.handle);}} style={menuItemStyle}>公开作者页</button>
+              <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin');}} style={menuItemStyle}>创作台 · Studio</button>
+              {u.role === 'ADMIN' && (
+                <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin-users');}} style={menuItemStyle}>平台管理</button>
+              )}
               <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin-editor', null);}} style={menuItemStyle}>写新文章</button>
               <div style={{ height: 1, background: 'var(--border)', margin: '6px 0' }}/>
               <button onClick={()=>{

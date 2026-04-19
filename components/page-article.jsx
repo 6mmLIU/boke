@@ -178,13 +178,23 @@ const PageArticle = ({ onNav, articleId, user }) => {
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '20px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', marginBottom: 40 }}>
-            <Avatar char={a.author.avatar} size={44} accent/>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 15, fontWeight: 500 }}>{a.author.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
-                @{a.author.handle}
-                {typeof a.author.articles === 'number' ? ` · ${a.author.articles} 篇文章` : ''}
-                {typeof a.author.followers === 'number' ? ` · ${a.author.followers.toLocaleString()} 读者` : ''}
+            <div
+              onClick={() => a.author.handle && onNav && onNav('author', a.author.handle)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                flex: 1,
+                cursor: a.author.handle ? 'pointer' : 'default',
+              }}>
+              <Avatar char={a.author.avatar} size={44} accent/>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 500 }}>{a.author.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
+                  @{a.author.handle}
+                  {typeof a.author.articles === 'number' ? ` · ${a.author.articles} 篇文章` : ''}
+                  {typeof a.author.followers === 'number' ? ` · ${a.author.followers.toLocaleString()} 读者` : ''}
+                </div>
               </div>
             </div>
           </div>

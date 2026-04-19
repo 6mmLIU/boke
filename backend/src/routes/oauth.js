@@ -7,6 +7,11 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { generateToken } = require('../middleware/auth');
+const {
+  AUTH_USER_SELECT,
+  buildUniqueHandle,
+  ensureAdminBootstrap,
+} = require('../lib/users');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -134,12 +139,8 @@ router.get('/github/callback', async (req, res, next) => {
 
       if (!user) {
         // 新建用户 (无密码)
-        const baseHandle = (ghUser.login || 'user').toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'user';
-        let uniqueHandle = baseHandle;
-        let counter = 1;
-        while (await prisma.user.findUnique({ where: { handle: uniqueHandle } })) {
-          uniqueHandle = `${baseHandle}-${counter++}`;
-        }
+        const uniqueHandle = await buildUniqueHandle(prisma, ghUser.login || ghUser.name || 'user');
+        const existingUserCount = await prisma.user.count();
         user = await prisma.user.create({
           data: {
             email: primaryEmail || `gh-${ghUser.id}@noemail.local`,
@@ -147,8 +148,13 @@ router.get('/github/callback', async (req, res, next) => {
             handle: uniqueHandle,
             avatar: ghUser.avatar_url,
             password: null,
+            role: existingUserCount === 0 ? 'ADMIN' : 'USER',
           },
+          select: AUTH_USER_SELECT,
         });
+      }
+      if (user.isBanned) {
+        return redirectToFrontend(res, { oauth: 'error', message: '账户已被封禁，请联系管理员' });
       }
 
       await prisma.oAuthAccount.create({
@@ -163,6 +169,12 @@ router.get('/github/callback', async (req, res, next) => {
       });
       userId = user.id;
     }
+
+    if (oauth && oauth.user && oauth.user.isBanned) {
+      return redirectToFrontend(res, { oauth: 'error', message: '账户已被封禁，请联系管理员' });
+    }
+
+    await ensureAdminBootstrap(prisma, userId);
 
     // 5. 签发 JWT 并带回前端 (放在 hash 里,避免落进服务器日志)
     const jwtToken = generateToken(userId);

@@ -62,9 +62,10 @@
       const msg = (data && (data.error || data.message)) || `请求失败（${res.status}）`;
       const err = new Error(msg);
       err.status = res.status;
+      err.code = data && data.code;
       err.details = data && data.details;
-      // 401 自动登出
-      if (res.status === 401 && authToken) setAuth(null, null);
+      // 认证失效或账户被封禁时自动登出
+      if ((res.status === 401 || err.code === 'ACCOUNT_BANNED') && authToken) setAuth(null, null);
       throw err;
     }
     return data;
@@ -124,6 +125,11 @@
     },
 
     logout() { setAuth(null, null); },
+
+    syncUser(user) {
+      setAuth(authToken, user);
+      return user;
+    },
   };
 
   // ────── 文章 ──────
@@ -146,14 +152,30 @@
     delete: (id) => request(`/api/comments/${id}`, { method: 'DELETE' }),
   };
 
+  const Users = {
+    get: (handle) => request(`/api/users/${encodeURIComponent(handle)}`),
+    updateProfile: (payload) => request('/api/users/me/profile', { method: 'PATCH', body: payload }),
+    updateHandle: (handle) => request('/api/users/me/handle', { method: 'PATCH', body: { handle } }),
+  };
+
+  const Uploads = {
+    image: ({ dataUrl, filename }) => request('/api/uploads/images', {
+      method: 'POST',
+      body: { dataUrl, filename },
+    }),
+  };
+
   // ────── 后台 ──────
   const Admin = {
     stats: () => request('/api/admin/stats'),
     articles: (params = {}) => request('/api/admin/articles', { query: params }),
     comments: (params = {}) => request('/api/admin/comments', { query: params }),
     deleteComment: (id) => request(`/api/admin/comments/${id}`, { method: 'DELETE' }),
+    users: (params = {}) => request('/api/admin/users', { query: params }),
+    banUser: (id, reason = '') => request(`/api/admin/users/${id}/ban`, { method: 'PATCH', body: { reason } }),
+    unbanUser: (id) => request(`/api/admin/users/${id}/unban`, { method: 'PATCH' }),
   };
 
-  global.API = { request, Articles, Comments, Admin, base: API_BASE };
+  global.API = { request, Articles, Comments, Users, Uploads, Admin, base: API_BASE };
   global.Auth = Auth;
 })(window);

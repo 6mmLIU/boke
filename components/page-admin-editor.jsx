@@ -1,7 +1,7 @@
 /* global React, Icon, AdminShell, Loading, renderMd */
 
-// Resize a pasted image so the embedded data URL doesn't balloon
-// the article payload. Keeps longest edge <= maxDim.
+// Resize clipboard or local images before uploading to the backend.
+// Keeps longest edge <= maxDim so writing stays lightweight.
 const compressImageToDataUrl = (file, maxDim = 1600, quality = 0.85) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -49,9 +49,15 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
   const [cover, setCover] = React.useState('warm');
   const [loadingArticle, setLoadingArticle] = React.useState(isEdit);
   const [publishing, setPublishing] = React.useState(false);
+  const [uploadingImage, setUploadingImage] = React.useState(false);
   const [error, setError] = React.useState('');
   const [focusedTool, setFocusedTool] = React.useState(null);
+  const [imagePanelOpen, setImagePanelOpen] = React.useState(false);
+  const [imageUrlInput, setImageUrlInput] = React.useState('');
+  const [imageAltInput, setImageAltInput] = React.useState('');
+  const [dragActive, setDragActive] = React.useState(false);
   const taRef = React.useRef(null);
+  const fileInputRef = React.useRef(null);
 
   // 自定义光标（带扫尾拖影）
   const [caret, setCaret] = React.useState({ x: 0, y: 0, h: 25, on: false });
@@ -172,10 +178,50 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
     }, 0);
   };
 
+  const insertImageMarkdown = (url, alt = '') => {
+    const safeAlt = (alt || '').replace(/\]/g, '').trim();
+    insertAtCursor(`\n\n![${safeAlt}](${url})\n\n`);
+  };
+
+  const uploadImageDataUrl = async (dataUrl, filename = 'image') => {
+    const res = await window.API.Uploads.image({ dataUrl, filename });
+    return res.url;
+  };
+
+  const uploadImageFile = async (file, altText = '') => {
+    try {
+      setUploadingImage(true);
+      setError('');
+      const dataUrl = await compressImageToDataUrl(file);
+      const url = await uploadImageDataUrl(dataUrl, file.name || 'image');
+      insertImageMarkdown(url, altText);
+      setImagePanelOpen(false);
+      setImageUrlInput('');
+    } catch (err) {
+      setError(err.message || '图片上传失败');
+    } finally {
+      setUploadingImage(false);
+      setDragActive(false);
+    }
+  };
+
+  const replacePastedDataImages = async (text) => {
+    const matches = [...text.matchAll(/!\[([^\]]*)\]\((data:image\/[^)]+)\)/ig)];
+    if (!matches.length) return text;
+
+    let nextText = text;
+    for (const match of matches) {
+      const alt = match[1] || '';
+      const dataUrl = match[2];
+      const url = await uploadImageDataUrl(dataUrl, 'pasted-image');
+      nextText = nextText.replace(match[0], `![${alt}](${url})`);
+    }
+    return nextText;
+  };
+
   const handlePasteImage = async (file) => {
     try {
-      const dataUrl = await compressImageToDataUrl(file);
-      insertAtCursor(`\n\n![](${dataUrl})\n\n`);
+      await uploadImageFile(file, imageAltInput);
     } catch (err) {
       setError(err.message || '图片处理失败');
     }
@@ -202,21 +248,76 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
     const html = cd.getData && cd.getData('text/html');
     if (html) {
       const m = html.match(/<img[^>]+src=["']([^"']+)["'][^>]*>/i);
+      if (m && /^data:image\//i.test(m[1])) {
+        e.preventDefault();
+        setUploadingImage(true);
+        uploadImageDataUrl(m[1], 'clipboard-image')
+          .then((url) => insertImageMarkdown(url, imageAltInput))
+          .catch((err) => setError(err.message || '图片上传失败'))
+          .finally(() => setUploadingImage(false));
+        return;
+      }
       if (m && /^https?:\/\//i.test(m[1])) {
         e.preventDefault();
-        insertAtCursor(`\n\n![](${m[1]})\n\n`);
+        insertImageMarkdown(m[1], imageAltInput);
         return;
       }
     }
 
-    // 3) Pasted plain text that is itself an image URL.
+    // 3) Pasted markdown text that contains inline data:image payloads.
     const txt = cd.getData && cd.getData('text/plain');
+    if (txt && /!\[[^\]]*]\(data:image\//i.test(txt)) {
+      e.preventDefault();
+      setUploadingImage(true);
+      replacePastedDataImages(txt)
+        .then((nextText) => insertAtCursor(nextText))
+        .catch((err) => setError(err.message || '图片上传失败'))
+        .finally(() => setUploadingImage(false));
+      return;
+    }
+
+    // 4) Pasted plain text that is itself an image URL.
     if (txt && IMG_URL_RE.test(txt.trim())) {
       e.preventDefault();
-      insertAtCursor(`\n\n![](${txt.trim()})\n\n`);
+      insertImageMarkdown(txt.trim(), imageAltInput);
       return;
     }
     // Otherwise fall through to default paste (text).
+  };
+
+  const onContentDragOver = (e) => {
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (!files.some((file) => file.type.startsWith('image/'))) return;
+    e.preventDefault();
+    setDragActive(true);
+  };
+
+  const onContentDragLeave = (e) => {
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    setDragActive(false);
+  };
+
+  const onContentDrop = (e) => {
+    const files = Array.from(e.dataTransfer?.files || []);
+    const imageFile = files.find((file) => file.type.startsWith('image/'));
+    if (!imageFile) return;
+    e.preventDefault();
+    setDragActive(false);
+    uploadImageFile(imageFile, imageAltInput);
+  };
+
+  const onPickImageFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) uploadImageFile(file, imageAltInput);
+    e.target.value = '';
+  };
+
+  const onInsertImageUrl = () => {
+    const url = imageUrlInput.trim();
+    if (!url) return;
+    insertImageMarkdown(url, imageAltInput);
+    setImagePanelOpen(false);
+    setImageUrlInput('');
   };
 
   const tools = [
@@ -226,10 +327,7 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
     { k: 'q', icon: 'quote',  a: ()=>insert('> '),      title: '引用' },
     { k: 'l', icon: 'list',   a: ()=>insert('- '),      title: '列表' },
     { k: 'k', icon: 'link',   a: ()=>insert('[','](url)'), title: '链接' },
-    { k: 'm', icon: 'image',  a: ()=>{
-        const url = window.prompt('图片链接(或直接在正文 Ctrl/⌘-V 粘贴图片):', '');
-        if (url && url.trim()) insertAtCursor(`\n\n![](${url.trim()})\n\n`);
-      }, title: '图片 — 可直接粘贴' },
+    { k: 'm', icon: 'image',  a: ()=>setImagePanelOpen(v => !v), title: '图片 — 上传 / 粘贴 / 拖拽' },
     { k: 'c', icon: 'code',   a: ()=>insert('`','`'),   title: '代码' },
   ];
 
@@ -295,7 +393,7 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
           </div>
           <div style={{ flex: 1 }}/>
           <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
-            {wordCount} 字 · 约 {est} 分钟
+            {uploadingImage ? '图片上传中…' : `${wordCount} 字 · 约 ${est} 分钟`}
           </div>
           <button className="btn btn-primary" onClick={onPublish} disabled={publishing}>
             {publishing ? '保存中…' : (isEdit ? '更新' : '发布')}
@@ -317,11 +415,11 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
             background: 'var(--surface-2)',
           }}>
             {/* Toolbar */}
-            <div style={{
-              display: 'flex', gap: 2, padding: '10px 32px',
-              borderBottom: '1px solid var(--border)',
-              background: 'var(--surface)',
-            }}>
+              <div style={{
+                display: 'flex', gap: 2, padding: '10px 32px',
+                borderBottom: '1px solid var(--border)',
+                background: 'var(--surface)',
+              }}>
               {tools.map(t => (
                 <button key={t.k} onClick={t.a} title={t.title}
                   onMouseEnter={()=>setFocusedTool(t.k)} onMouseLeave={()=>setFocusedTool(null)}
@@ -336,13 +434,72 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
                 </button>
               ))}
               <div style={{ flex: 1 }}/>
-              <div style={{ fontSize: 11, color: 'var(--ink-4)', alignSelf: 'center', paddingRight: 8 }}>
-                Markdown · 实时预览
+                <div style={{ fontSize: 11, color: 'var(--ink-4)', alignSelf: 'center', paddingRight: 8 }}>
+                  Markdown · 实时预览
+                </div>
               </div>
-            </div>
-            <div style={{ padding: '40px 64px', overflowY: 'auto', flex: 1 }}>
-              <input
-                value={title} onChange={e=>setTitle(e.target.value)}
+              {imagePanelOpen && (
+                <div style={{
+                  padding: '18px 32px',
+                  borderBottom: '1px solid var(--border)',
+                  background: 'rgba(253, 251, 246, 0.8)',
+                  display: 'grid',
+                  gridTemplateColumns: '1fr auto',
+                  gap: 16,
+                  alignItems: 'end',
+                }}>
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    <div>
+                      <div style={{ fontFamily: 'var(--serif)', fontSize: 18, marginBottom: 6 }}>插入图片</div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
+                        支持外链、拖拽、粘贴截图或直接上传。正文里只会写入图片 URL，不再塞入 Base64。
+                      </div>
+                    </div>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>图片地址</span>
+                      <input
+                        value={imageUrlInput}
+                        onChange={(e)=>setImageUrlInput(e.target.value)}
+                        placeholder="https://example.com/cover.jpg"
+                        style={{
+                          width: '100%',
+                          padding: 12,
+                          borderRadius: 12,
+                          border: '1px solid var(--border)',
+                          background: 'var(--surface)',
+                          outline: 'none',
+                        }}/>
+                    </label>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>替代文字（可选）</span>
+                      <input
+                        value={imageAltInput}
+                        onChange={(e)=>setImageAltInput(e.target.value)}
+                        placeholder="例如：书桌上的钢笔与便笺"
+                        style={{
+                          width: '100%',
+                          padding: 12,
+                          borderRadius: 12,
+                          border: '1px solid var(--border)',
+                          background: 'var(--surface)',
+                          outline: 'none',
+                        }}/>
+                    </label>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onPickImageFile} style={{ display: 'none' }}/>
+                    <button className="btn" disabled={uploadingImage} onClick={()=>fileInputRef.current && fileInputRef.current.click()}>
+                      {uploadingImage ? '上传中…' : '选择图片'}
+                    </button>
+                    <button className="btn btn-primary" onClick={onInsertImageUrl} disabled={!imageUrlInput.trim()}>
+                      插入外链
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div style={{ padding: '40px 64px', overflowY: 'auto', flex: 1 }}>
+                <input
+                  value={title} onChange={e=>setTitle(e.target.value)}
                 placeholder="一个可以说一整晚的标题…"
                 style={{
                   width: '100%', border: 'none', outline: 'none', background: 'transparent',
@@ -393,18 +550,45 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
                   </button>
                 ))}
               </div>
-              <div style={{ position: 'relative' }}>
+              <div
+                style={{
+                  position: 'relative',
+                  borderRadius: 18,
+                  outline: dragActive ? '2px dashed var(--accent)' : 'none',
+                  outlineOffset: dragActive ? 10 : 0,
+                  transition: 'outline-offset 120ms ease-out',
+                }}
+                onDragOver={onContentDragOver}
+                onDragLeave={onContentDragLeave}
+                onDrop={onContentDrop}>
                 <textarea
                   ref={taRef}
                   value={content} onChange={e=>setContent(e.target.value)}
                   onPaste={onContentPaste}
-                  placeholder="从一个清澈的句子开始…(可直接粘贴图片)"
+                  placeholder="从一个清澈的句子开始…（支持拖拽、粘贴、上传图片）"
                   className="editor-ta-hide-caret"
                   style={{
                     width: '100%', minHeight: 400, border: 'none', outline: 'none', resize: 'none',
                     background: 'transparent', fontFamily: 'var(--mono)', fontSize: 14,
                     lineHeight: 1.8, color: 'var(--ink-2)',
                   }}/>
+                {dragActive && (
+                  <div style={{
+                    position: 'absolute',
+                    inset: -14,
+                    borderRadius: 20,
+                    background: 'rgba(197, 112, 74, 0.08)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'none',
+                    color: 'var(--accent-deep)',
+                    fontFamily: 'var(--serif)',
+                    fontSize: 16,
+                  }}>
+                    松开以上传并插入图片
+                  </div>
+                )}
                 {/* Mirror div for caret position measurement */}
                 <div ref={mirrorRef} aria-hidden="true" style={{
                   position: 'absolute', top: 0, left: 0,

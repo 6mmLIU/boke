@@ -237,9 +237,7 @@ Follow (关注)
 ├── styles/
 │   └── tokens.css        # CSS变量
 ├── index.html            # 主页
-├── canvas.html           # 画布页
 ├── api.js                # 前端API工具
-├── design-canvas.jsx     # 设计画布
 └── README.md
 ```
 

@@ -5,6 +5,24 @@ const PageProfile = ({ onNav, user }) => {
   const [articles, setArticles] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
+  const [profileDraft, setProfileDraft] = React.useState({ name: '', bio: '' });
+  const [handleDraft, setHandleDraft] = React.useState('');
+  const [savingProfile, setSavingProfile] = React.useState(false);
+  const [savingHandle, setSavingHandle] = React.useState(false);
+  const [notice, setNotice] = React.useState('');
+
+  React.useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    setProfileDraft({
+      name: user.name || '',
+      bio: user.bio || '',
+    });
+    setHandleDraft(user.handle || '');
+  }, [user]);
 
   React.useEffect(() => {
     if (!user) { setLoading(false); return; }
@@ -38,8 +56,8 @@ const PageProfile = ({ onNav, user }) => {
     );
   }
 
-  const totalLikes = articles.reduce((s, a) => s + (a.likes || 0), 0);
-  const totalViews = articles.reduce((s, a) => s + (a.views || 0), 0);
+  const totalLikes = articles.reduce((sum, article) => sum + (article.likes || 0), 0);
+  const totalViews = articles.reduce((sum, article) => sum + (article.views || 0), 0);
   const stats = [
     { label: '文章', value: articles.length },
     { label: '阅读', value: totalViews },
@@ -48,15 +66,46 @@ const PageProfile = ({ onNav, user }) => {
   ];
   const tabs = [
     { k: 'articles', l: '文章', le: 'Articles', c: articles.length },
-    { k: 'about', l: '关于', le: 'About' },
+    { k: 'about', l: '资料', le: 'Profile' },
   ];
 
+  const handleProfileSave = async () => {
+    setSavingProfile(true);
+    setNotice('');
+    try {
+      const res = await window.API.Users.updateProfile(profileDraft);
+      window.Auth.syncUser(res.user);
+      setNotice('资料已更新');
+    } catch (err) {
+      setError(err.message || '保存失败');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleHandleSave = async () => {
+    setSavingHandle(true);
+    setNotice('');
+    setError('');
+    try {
+      const res = await window.API.Users.updateHandle(handleDraft);
+      window.Auth.syncUser(res.user);
+      setHandleDraft(res.user.handle || '');
+      setNotice('公开主页用户名已更新');
+    } catch (err) {
+      setError(err.message || '用户名更新失败');
+      setHandleDraft(user.handle || '');
+    } finally {
+      setSavingHandle(false);
+    }
+  };
+
   const initial = user.name ? user.name[0] : '砚';
+  const handleLocked = !!user.handleChangedAt;
 
   return (
     <div>
       <TopNav active="profile" onNav={onNav} user={user}/>
-      {/* Hero cover */}
       <div style={{ height: 220, position: 'relative', overflow: 'hidden' }}>
         <Cover variant="warm" height={220} rounded={false}/>
       </div>
@@ -83,43 +132,63 @@ const PageProfile = ({ onNav, user }) => {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, paddingBottom: 8 }}>
-            <button className="btn" onClick={()=>onNav && onNav('admin-editor', null)}>
-              <Icon name="feather" size={14}/> 写作
+            <button className="btn" onClick={()=>onNav && onNav('author', user.handle)}>
+              <Icon name="user" size={14}/> 公开主页
             </button>
             <button className="btn btn-primary" onClick={()=>onNav && onNav('admin')}>
-              进入后台
+              进入创作台
             </button>
           </div>
         </div>
 
-        {/* Stats */}
+        {notice && (
+          <div style={{
+            marginTop: 18,
+            padding: '12px 16px',
+            borderRadius: 12,
+            background: 'rgba(100, 130, 90, 0.08)',
+            color: '#49624a',
+            fontSize: 13,
+          }}>{notice}</div>
+        )}
+
+        {error && (
+          <div style={{
+            marginTop: 18,
+            padding: '12px 16px',
+            borderRadius: 12,
+            background: 'rgba(180,80,60,0.08)',
+            color: 'var(--danger)',
+            fontSize: 13,
+          }}>{error}</div>
+        )}
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, margin: '32px 0' }}>
-          {stats.map((s, i) => (
-            <div key={s.label} className="card fade-up" style={{ padding: '22px 24px', animationDelay: i*80+'ms' }}>
-              <div style={{ fontSize: 12, color: 'var(--ink-4)', marginBottom: 6, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{s.label}</div>
+          {stats.map((item, index) => (
+            <div key={item.label} className="card fade-up" style={{ padding: '22px 24px', animationDelay: index*80+'ms' }}>
+              <div style={{ fontSize: 12, color: 'var(--ink-4)', marginBottom: 6, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{item.label}</div>
               <div style={{ fontFamily: 'var(--serif)', fontSize: 32, letterSpacing: '-0.01em' }}>
-                {typeof s.value === 'number' ? s.value.toLocaleString() : s.value}
+                {typeof item.value === 'number' ? item.value.toLocaleString() : item.value}
               </div>
             </div>
           ))}
         </div>
 
-        {/* Tabs */}
         <div style={{ display: 'flex', gap: 2, marginBottom: 28, borderBottom: '1px solid var(--border)' }}>
-          {tabs.map(t => (
-            <button key={t.k} onClick={()=>setTab(t.k)} style={{
+          {tabs.map((tabItem) => (
+            <button key={tabItem.k} onClick={()=>setTab(tabItem.k)} style={{
               background: 'transparent', border: 'none', cursor: 'pointer',
               padding: '14px 20px',
               fontSize: 14, fontWeight: 500,
-              color: tab === t.k ? 'var(--ink)' : 'var(--ink-4)',
-              borderBottom: '2px solid ' + (tab === t.k ? 'var(--accent)' : 'transparent'),
+              color: tab === tabItem.k ? 'var(--ink)' : 'var(--ink-4)',
+              borderBottom: '2px solid ' + (tab === tabItem.k ? 'var(--accent)' : 'transparent'),
               transition: 'all var(--d-fast)',
               display: 'inline-flex', alignItems: 'center', gap: 8,
               marginBottom: -1,
             }}>
-              {t.l}
-              <span style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-4)', fontSize: 12 }}>{t.le}</span>
-              {t.c !== undefined && <span className="tag" style={{ fontSize: 11, padding: '1px 8px' }}>{t.c}</span>}
+              {tabItem.l}
+              <span style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-4)', fontSize: 12 }}>{tabItem.le}</span>
+              {tabItem.c !== undefined && <span className="tag" style={{ fontSize: 11, padding: '1px 8px' }}>{tabItem.c}</span>}
             </button>
           ))}
         </div>
@@ -138,21 +207,117 @@ const PageProfile = ({ onNav, user }) => {
             />
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
-              {articles.map((a, i) => (
-                <ArticleCard key={a.id} article={a} onOpen={(id)=>onNav('article', id)} delay={i*60}/>
+              {articles.map((article, index) => (
+                <ArticleCard
+                  key={article.id}
+                  article={article}
+                  onOpen={(id)=>onNav('article', id)}
+                  onOpenAuthor={(handle)=>onNav('author', handle)}
+                  delay={index * 60}
+                />
               ))}
             </div>
           )
         )}
+
         {tab === 'about' && (
-          <div className="card" style={{ padding: 32 }}>
-            <div style={{ fontFamily: 'var(--serif)', fontSize: 18, lineHeight: 1.8, color: 'var(--ink-2)' }}>
-              {user.bio || '这位作者还没有写下个人简介。'}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 24 }}>
+            <div className="card" style={{ padding: 28 }}>
+              <div style={{ fontFamily: 'var(--serif)', fontSize: 22, marginBottom: 6 }}>资料设置</div>
+              <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-4)', marginBottom: 20 }}>
+                Update your public profile
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>笔名</span>
+                  <input
+                    value={profileDraft.name}
+                    onChange={(e)=>setProfileDraft((draft) => ({ ...draft, name: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      padding: 12,
+                      border: '1px solid var(--border)',
+                      borderRadius: 12,
+                      background: 'var(--surface)',
+                      outline: 'none',
+                    }}/>
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>个人简介</span>
+                  <textarea
+                    value={profileDraft.bio}
+                    onChange={(e)=>setProfileDraft((draft) => ({ ...draft, bio: e.target.value }))}
+                    rows={5}
+                    style={{
+                      width: '100%',
+                      padding: 12,
+                      border: '1px solid var(--border)',
+                      borderRadius: 12,
+                      background: 'var(--surface)',
+                      outline: 'none',
+                      resize: 'vertical',
+                      lineHeight: 1.7,
+                    }}/>
+                </label>
+                <div>
+                  <button className="btn btn-primary" disabled={savingProfile} onClick={handleProfileSave}>
+                    {savingProfile ? '保存中…' : '保存资料'}
+                  </button>
+                </div>
+              </div>
             </div>
-            <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--ink-4)' }}>
-              <div>邮箱:{user.email}</div>
-              <div>笔名:@{user.handle}</div>
-              {user.createdAt && <div>加入时间:{new Date(user.createdAt).toLocaleDateString('zh-CN')}</div>}
+
+            <div className="card" style={{ padding: 28 }}>
+              <div style={{ fontFamily: 'var(--serif)', fontSize: 22, marginBottom: 6 }}>公开主页用户名</div>
+              <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-4)', marginBottom: 20 }}>
+                Your public handle
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>用户名</span>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '0 12px',
+                    border: '1px solid var(--border)',
+                    borderRadius: 12,
+                    background: 'var(--surface)',
+                  }}>
+                    <span style={{ color: 'var(--ink-4)' }}>@</span>
+                    <input
+                      value={handleDraft}
+                      onChange={(e)=>setHandleDraft(e.target.value.replace(/^@+/, ''))}
+                      disabled={handleLocked}
+                      style={{
+                        flex: 1,
+                        padding: 12,
+                        border: 'none',
+                        outline: 'none',
+                        background: 'transparent',
+                        color: handleLocked ? 'var(--ink-4)' : 'var(--ink)',
+                      }}/>
+                  </div>
+                </label>
+                <div style={{ fontSize: 12, color: 'var(--ink-4)', lineHeight: 1.7 }}>
+                  {handleLocked
+                    ? `你已经在 ${new Date(user.handleChangedAt).toLocaleDateString('zh-CN')} 修改过一次用户名，当前已锁定。`
+                    : '用户名只能修改一次。支持小写字母、数字、下划线和短横线。'}
+                </div>
+                {user.previousHandle && (
+                  <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
+                    旧链接保留为：@{user.previousHandle}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button className="btn btn-primary" disabled={savingHandle || handleLocked} onClick={handleHandleSave}>
+                    {savingHandle ? '更新中…' : '更新用户名'}
+                  </button>
+                  <button className="btn" onClick={()=>onNav && onNav('author', user.handle)}>
+                    查看公开主页
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

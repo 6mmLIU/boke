@@ -130,18 +130,21 @@ const PageRanking = ({ onNav, user }) => {
                         padding: '12px 18px',
                         borderBottom: i < authors.length - 1 ? '1px solid var(--border)' : 'none',
                         animationDelay: i*60 + 'ms',
+                        cursor: a.handle ? 'pointer' : 'default',
                       }}>
                         <div style={{
                           width: 22, fontFamily: 'var(--serif)', fontSize: 16,
                           color: i < 3 ? 'var(--accent)' : 'var(--ink-4)',
                           fontWeight: 500,
                         }}>{String(i+1).padStart(2,'0')}</div>
-                        <Avatar char={a.avatar} size={36} accent={i<3}/>
+                        <div onClick={() => a.handle && onNav('author', a.handle)} style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                          <Avatar char={a.avatar} size={36} accent={i<3}/>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 14, fontWeight: 500 }}>{a.name}</div>
                           <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>
                             {a.articles} 篇 · <RollingNumber value={a.likes}/> 赞
                           </div>
+                        </div>
                         </div>
                       </div>
                     ))}

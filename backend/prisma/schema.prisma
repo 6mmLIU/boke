@@ -15,9 +15,15 @@ model User {
   email     String   @unique
   name      String   // 笔名
   handle    String   @unique // @用户名
+  previousHandle String? @unique
   password  String?  // 哈希密码 (OAuth 用户可能为空)
   bio       String?  // 个人简介
   avatar    String?  // 头像URL
+  role      String   @default("USER")
+  isBanned  Boolean  @default(false)
+  bannedAt  DateTime?
+  bannedReason String?
+  handleChangedAt DateTime?
 
   // 关系
   articles      Article[]

@@ -3,8 +3,9 @@
 // ─────────────────────────────────────────────────────────
 // Article card — opens article by id
 // ─────────────────────────────────────────────────────────
-const ArticleCard = ({ article, onOpen, compact, featured, delay = 0 }) => {
+const ArticleCard = ({ article, onOpen, onOpenAuthor, compact, featured, delay = 0 }) => {
   const [hover, setHover] = React.useState(false);
+  const canOpenAuthor = !!(onOpenAuthor && article.author && article.author.handle);
   return (
     <article
       onMouseEnter={()=>setHover(true)}
@@ -48,7 +49,14 @@ const ArticleCard = ({ article, onOpen, compact, featured, delay = 0 }) => {
           }}>{article.excerpt}</p>
         )}
         <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div
+            onClick={canOpenAuthor ? (e) => { e.stopPropagation(); onOpenAuthor(article.author.handle); } : undefined}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              cursor: canOpenAuthor ? 'pointer' : 'default',
+            }}>
             <Avatar char={article.author.avatar} size={28}/>
             <div>
               <div style={{ fontSize: 13, color: 'var(--ink-2)' }}>{article.author.name}</div>
@@ -93,6 +101,7 @@ const PageHome = ({ onNav, tweaks, user }) => {
 
   const compact = tweaks?.density === 'compact';
   const openArticle = (id) => onNav && onNav('article', id);
+  const openAuthor = (handle) => onNav && onNav('author', handle);
 
   const featured = articles[0];
   const sideTop = articles.slice(1, 3);
@@ -163,12 +172,12 @@ const PageHome = ({ onNav, tweaks, user }) => {
             {/* Featured row — only show if we have multiple articles */}
             {articles.length >= 5 ? (
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 24, marginBottom: 32 }}>
-                <ArticleCard article={featured} onOpen={openArticle} featured delay={0}/>
+                <ArticleCard article={featured} onOpen={openArticle} onOpenAuthor={openAuthor} featured delay={0}/>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                  {sideTop.map((a, i) => <ArticleCard key={a.id} article={a} onOpen={openArticle} compact delay={80+i*80}/>)}
+                  {sideTop.map((a, i) => <ArticleCard key={a.id} article={a} onOpen={openArticle} onOpenAuthor={openAuthor} compact delay={80+i*80}/>)}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                  {sideBot.map((a, i) => <ArticleCard key={a.id} article={a} onOpen={openArticle} compact delay={240+i*80}/>)}
+                  {sideBot.map((a, i) => <ArticleCard key={a.id} article={a} onOpen={openArticle} onOpenAuthor={openAuthor} compact delay={240+i*80}/>)}
                 </div>
               </div>
             ) : (
@@ -176,7 +185,7 @@ const PageHome = ({ onNav, tweaks, user }) => {
                 display: 'grid', gridTemplateColumns: compact ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: 24,
               }}>
                 {articles.map((a, i) => (
-                  <ArticleCard key={a.id} article={a} onOpen={openArticle} delay={i*60}/>
+                  <ArticleCard key={a.id} article={a} onOpen={openArticle} onOpenAuthor={openAuthor} delay={i*60}/>
                 ))}
               </div>
             )}
@@ -195,7 +204,7 @@ const PageHome = ({ onNav, tweaks, user }) => {
                   display: 'grid', gridTemplateColumns: compact ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: 24,
                 }}>
                   {remaining.map((a, i) => (
-                    <ArticleCard key={a.id} article={a} onOpen={openArticle} delay={i*60}/>
+                    <ArticleCard key={a.id} article={a} onOpen={openArticle} onOpenAuthor={openAuthor} delay={i*60}/>
                   ))}
                 </div>
               </>
