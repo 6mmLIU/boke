@@ -1,4 +1,4 @@
-/* global React, API, Icon, Avatar, Cover, TopNav, EmptyState, Loading, adaptArticle */
+/* global React, API, Icon, Avatar, Cover, TopNav, EmptyState, Loading, adaptArticle, SlidingTabs */
 
 // ─────────────────────────────────────────────────────────
 // Article card — opens article by id
@@ -148,18 +148,29 @@ const PageHome = ({ onNav, tweaks, user }) => {
               Slow down to think further.
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6, background: 'var(--paper-2)', padding: 4, borderRadius: 'var(--r-pill)', border: '1px solid var(--border)' }}>
-            {sortOptions.map(t => (
-              <button key={t.k} onClick={()=>setSort(t.k)} style={{
-                padding: '8px 18px', fontSize: 13, border: 'none', borderRadius: 'var(--r-pill)',
-                background: sort === t.k ? 'var(--surface)' : 'transparent',
-                color: sort === t.k ? 'var(--ink)' : 'var(--ink-3)',
-                boxShadow: sort === t.k ? 'var(--shadow-sm)' : 'none',
-                cursor: 'pointer', fontWeight: sort === t.k ? 500 : 400,
-                transition: 'all var(--d-fast) var(--ease-out)',
-              }}>{t.l}</button>
-            ))}
-          </div>
+          <SlidingTabs
+            containerStyle={{
+              background: 'var(--paper-2)',
+              padding: 4,
+              borderRadius: 'var(--r-pill)',
+              border: '1px solid var(--border)',
+            }}
+            padding={4}
+            gap={2}
+            value={sort}
+            onChange={setSort}
+            items={sortOptions.map(t => ({ key: t.k, label: t.l }))}
+            renderItem={(item, isActive) => (
+              <span style={{
+                display: 'inline-block',
+                padding: '8px 18px',
+                fontSize: 13,
+                color: isActive ? 'var(--ink)' : 'var(--ink-3)',
+                fontWeight: isActive ? 500 : 400,
+                transition: 'color var(--d-base) var(--ease-out), font-weight var(--d-base) var(--ease-out)',
+              }}>{item.label}</span>
+            )}
+          />
         </div>
 
         {loading ? (

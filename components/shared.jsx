@@ -651,6 +651,94 @@ const SearchModal = ({ open, onClose, onNav }) => {
   return ReactDOM.createPortal(modal, document.body);
 };
 
+// ─────────────────────────────────────────────────────────
+// Sliding pill tabs — measures the active tab and slides
+// a surface-colored pill under it. Used for nav + sort bars.
+// ─────────────────────────────────────────────────────────
+const SlidingTabs = ({
+  items, value, onChange, renderItem,
+  containerStyle, pillStyle,
+  transitionMs = 460,
+  padding = 4,
+  gap = 2,
+}) => {
+  const containerRef = React.useRef(null);
+  const itemRefs = React.useRef(new Map());
+  const [indicator, setIndicator] = React.useState(null);
+  const [primed, setPrimed] = React.useState(false);
+
+  const measure = React.useCallback(() => {
+    const el = itemRefs.current.get(value);
+    const container = containerRef.current;
+    if (!el || !container) return;
+    const er = el.getBoundingClientRect();
+    const cr = container.getBoundingClientRect();
+    setIndicator({ left: er.left - cr.left, width: er.width });
+  }, [value]);
+
+  React.useLayoutEffect(() => {
+    measure();
+    const raf = requestAnimationFrame(() => setPrimed(true));
+    return () => cancelAnimationFrame(raf);
+  }, [value, items, measure]);
+
+  React.useEffect(() => {
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [measure]);
+
+  return (
+    <div ref={containerRef} style={{
+      position: 'relative',
+      display: 'inline-flex',
+      alignItems: 'stretch',
+      gap,
+      padding,
+      ...containerStyle,
+    }}>
+      <div aria-hidden="true" style={{
+        position: 'absolute',
+        top: padding, bottom: padding,
+        left: indicator ? indicator.left : 0,
+        width: indicator ? indicator.width : 0,
+        borderRadius: 'var(--r-pill)',
+        background: 'var(--surface)',
+        boxShadow: '0 1px 2px rgba(74,66,58,0.05), 0 0 0 1px color-mix(in srgb, var(--border-strong) 45%, transparent)',
+        transition: primed
+          ? `left ${transitionMs}ms var(--ease-out), width ${transitionMs}ms var(--ease-out), opacity 240ms var(--ease-out), background-color var(--d-base) var(--ease-out)`
+          : 'opacity 240ms var(--ease-out), background-color var(--d-base) var(--ease-out)',
+        opacity: indicator ? 1 : 0,
+        pointerEvents: 'none',
+        zIndex: 0,
+        ...pillStyle,
+      }}/>
+      {items.map(item => {
+        const active = item.key === value;
+        return (
+          <button
+            key={item.key}
+            ref={(el) => {
+              if (el) itemRefs.current.set(item.key, el);
+              else itemRefs.current.delete(item.key);
+            }}
+            onClick={() => onChange && onChange(item.key)}
+            style={{
+              position: 'relative', zIndex: 1,
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              padding: 0,
+              color: 'inherit',
+            }}>
+            {renderItem(item, active)}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
 const TopNav = ({ active, onNav, user }) => {
   const u = user || (window.Auth && window.Auth.user) || null;
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -705,37 +793,39 @@ const TopNav = ({ active, onNav, user }) => {
             }}>砚</span>
             <span>Inkwell</span>
           </a>
-          <div style={{ display: 'flex', gap: 2, marginLeft: 12 }}>
-            {[
-              { k: 'home', l: '首页', le: 'Feed' },
-              { k: 'ranking', l: '排行榜', le: 'Rankings' },
-              { k: 'profile', l: '书房', le: 'Study' },
-            ].map(item => {
-              const isActive = active === item.k;
-              return (
-                <a key={item.k} href={'#'+item.k}
-                  onClick={e=>{e.preventDefault(); onNav && onNav(item.k);}}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: 'var(--r-pill)',
-                    background: isActive ? 'var(--paper-2)' : 'transparent',
-                    transition: 'background var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out)',
-                    display: 'inline-flex', alignItems: 'baseline', gap: 7,
-                  }}>
-                  <span className="paired-label-main" style={{
-                    fontSize: 15,
-                    fontWeight: isActive ? 500 : 400,
-                    color: isActive ? 'var(--ink)' : 'var(--ink-2)',
-                  }}>{item.l}</span>
-                  <span className="paired-label-sub" style={{
-                    fontSize: 12,
-                    color: isActive ? 'var(--ink-3)' : 'var(--ink-4)',
-                    letterSpacing: '0.01em',
-                  }}>{item.le}</span>
-                </a>
-              );
-            })}
-          </div>
+          <SlidingTabs
+            containerStyle={{ marginLeft: 12 }}
+            padding={0}
+            gap={2}
+            value={active || 'home'}
+            onChange={(k) => onNav && onNav(k)}
+            pillStyle={{ background: 'var(--paper-2)', boxShadow: 'none', border: 'none' }}
+            items={[
+              { key: 'home', l: '首页', le: 'Feed' },
+              { key: 'ranking', l: '排行榜', le: 'Rankings' },
+              { key: 'profile', l: '书房', le: 'Study' },
+            ]}
+            renderItem={(item, isActive) => (
+              <span style={{
+                display: 'inline-flex', alignItems: 'baseline', gap: 7,
+                padding: '8px 16px',
+                transition: 'color var(--d-fast) var(--ease-out)',
+              }}>
+                <span className="paired-label-main" style={{
+                  fontSize: 15,
+                  fontWeight: isActive ? 500 : 400,
+                  color: isActive ? 'var(--ink)' : 'var(--ink-2)',
+                  transition: 'color var(--d-base) var(--ease-out), font-weight var(--d-base) var(--ease-out)',
+                }}>{item.l}</span>
+                <span className="paired-label-sub" style={{
+                  fontSize: 12,
+                  color: isActive ? 'var(--ink-3)' : 'var(--ink-4)',
+                  letterSpacing: '0.01em',
+                  transition: 'color var(--d-base) var(--ease-out)',
+                }}>{item.le}</span>
+              </span>
+            )}
+          />
           <div style={{ flex: 1 }}/>
           <button
             type="button"
@@ -1292,7 +1382,7 @@ const renderMd = (src) => {
 
 Object.assign(window, {
   ARTICLES, AUTHORS, COMMENTS,
-  Icon, Avatar, Cover, TopNav, PageTransition, TweaksPanel,
+  Icon, Avatar, Cover, TopNav, PageTransition, TweaksPanel, SlidingTabs,
   formatDate, formatRelative, analyzeArticleComposition, adaptArticle, EmptyState, Loading,
   renderMd,
 });

@@ -17,6 +17,11 @@ const PageArticle = ({ onNav, articleId, user }) => {
   const [posting, setPosting] = React.useState(false);
   const [postError, setPostError] = React.useState('');
 
+  const composition = React.useMemo(
+    () => analyzeArticleComposition(article || {}),
+    [article],
+  );
+
   // Fetch the article
   React.useEffect(() => {
     if (!articleId) {
@@ -162,7 +167,6 @@ const PageArticle = ({ onNav, articleId, user }) => {
 
   const a = article;
   const bodyHtml = renderMd(a.content || '');
-  const composition = React.useMemo(() => analyzeArticleComposition(a), [a]);
   const coverHeight = composition.shape === 'visual'
     ? 420
     : composition.shape === 'longform'

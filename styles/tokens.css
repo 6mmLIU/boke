@@ -498,7 +498,13 @@ html[data-theme-animating="true"] *::after {
   body::after,
   html[data-theme-animating="true"] *,
   html[data-theme-animating="true"] *::before,
-  html[data-theme-animating="true"] *::after {
+  html[data-theme-animating="true"] *::after,
+  .density-cover > *,
+  .card:hover .density-cover > *,
+  .u-ink-breath,
+  .article-prose blockquote,
+  .article-prose a,
+  .tag {
     animation: none !important;
     transition: none !important;
   }
@@ -863,8 +869,18 @@ html[data-theme-animating="true"] *::after {
 }
 
 .article-prose a {
+  position: relative;
   color: var(--accent);
-  border-bottom: 1px solid currentColor;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 100% 1px;
+  padding-bottom: 1px;
+  transition: background-size var(--d-gentle) var(--ease-out), color var(--d-base) var(--ease-out);
+}
+.article-prose a:hover {
+  background-size: 100% 2px;
+  color: var(--accent-deep);
 }
 
 .article-prose .md-fig {
@@ -990,6 +1006,87 @@ html[data-theme-animating="true"] *::after {
     justify-content: flex-start;
     align-self: flex-start;
   }
+}
+
+/* ─────────────────────────────────────────────────────────
+   Typography rules
+   Serif (Fraunces + Noto Serif SC): editorial voice —
+     titles, prose body, CN/EN paired labels, logo, quotes,
+     author bylines, dates inside editorial cards.
+   Sans  (Inter + Noto Sans SC): utility voice —
+     nav chips, inputs, tags, buttons labels for system
+     actions, keyboard shortcuts, filenames.
+   Mono  (JetBrains Mono): keyboard shortcuts & code.
+───────────────────────────────────────────────────────── */
+.u-serif { font-family: var(--serif); }
+.u-sans  { font-family: var(--sans); }
+.u-mono  { font-family: var(--mono); }
+
+/* ─────────────────────────────────────────────────────────
+   Lyrical flourishes — gentle, rarely animated
+───────────────────────────────────────────────────────── */
+
+/* Cards: cover image has a slow breath on hover */
+.card .density-cover,
+.article-card-frame .density-cover {
+  overflow: hidden;
+}
+.card:hover .density-cover > *,
+.card:focus-within .density-cover > * {
+  transform: scale(1.018);
+}
+.density-cover > * {
+  transition: transform var(--d-gentle) var(--ease-out);
+  will-change: transform;
+}
+
+/* Editorial quotes: ink-bleed border that slides in */
+@keyframes inkBleed {
+  from { border-left-color: transparent; }
+  to   { border-left-color: var(--accent); }
+}
+.article-prose blockquote {
+  animation: inkBleed var(--d-gentle) var(--ease-out) both;
+}
+
+/* Tags: warm up gently on hover */
+.tag {
+  transition:
+    background-color var(--d-base) var(--ease-out),
+    color var(--d-base) var(--ease-out),
+    border-color var(--d-base) var(--ease-out);
+}
+.tag:hover {
+  background: var(--accent-wash);
+  color: var(--accent-deep);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+
+/* A subtle accent dot that breathes without pulsing hard */
+@keyframes inkBreath {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.12); }
+}
+.u-ink-breath {
+  animation: inkBreath 3.6s var(--ease-in-out) infinite;
+}
+
+/* Reading actions bar: small lift on hover, no pop */
+.reading-actions button {
+  transition:
+    background-color var(--d-base) var(--ease-out),
+    color var(--d-base) var(--ease-out),
+    transform var(--d-base) var(--ease-out);
+}
+.reading-actions button:hover {
+  background: var(--paper-2);
+}
+
+/* Hairline dividers inside editorial layouts soften over theme swap */
+.reading-author {
+  transition:
+    border-color var(--d-slow) var(--ease-out),
+    padding var(--d-base) var(--ease-out);
 }
 
 @media (max-width: 1120px) {
