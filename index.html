@@ -215,13 +215,26 @@
       const current = items.find((item) => item.k === page) || { l: '关于', le: 'About' };
 
       useEffect(() => {
-        if (position || !dockRef.current) return;
+        const clamp = (next) => {
+          const rect = dockRef.current?.getBoundingClientRect();
+          const width = rect?.width || 240;
+          const height = rect?.height || 50;
+          return {
+            x: Math.min(Math.max(12, next.x), window.innerWidth - width - 12),
+            y: Math.min(Math.max(12, next.y), window.innerHeight - height - 12),
+          };
+        };
+
+        if (!dockRef.current) return;
+
         const rect = dockRef.current.getBoundingClientRect();
-        setPosition({
+        const fallback = {
           x: Math.max(16, window.innerWidth - rect.width - 24),
           y: Math.max(16, window.innerHeight - rect.height - 24),
-        });
-      }, [position]);
+        };
+
+        setPosition((prev) => clamp(prev || fallback));
+      }, []);
 
       useEffect(() => {
         if (!position) return;
