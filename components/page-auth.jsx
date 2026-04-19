@@ -31,28 +31,39 @@ const Field = ({ name, label, type = 'text', placeholder, value, onChange, focus
 );
 
 const PageAuth = ({ onNav }) => {
-  const [mode, setMode] = React.useState('login'); // 'login' | 'register'
+  const [mode, setMode] = React.useState('login'); // 'login' | 'register' | 'forgot'
   const [focused, setFocused] = React.useState(null);
-  const [values, setValues] = React.useState({ email: '', password: '', name: '', code: '' });
+  const [values, setValues] = React.useState({
+    email: '',
+    password: '',
+    confirmPassword: '',
+    name: '',
+    code: '',
+  });
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
   const [info, setInfo] = React.useState('');
   const [codeSending, setCodeSending] = React.useState(false);
-  const [codeCooldown, setCodeCooldown] = React.useState(0); // 秒数
+  const [codeCooldown, setCodeCooldown] = React.useState(0);
 
-  // 倒计时
   React.useEffect(() => {
     if (codeCooldown <= 0) return;
-    const id = setTimeout(() => setCodeCooldown(c => c - 1), 1000);
+    const id = setTimeout(() => setCodeCooldown((current) => current - 1), 1000);
     return () => clearTimeout(id);
   }, [codeCooldown]);
 
-  // Already logged in? Bounce to home.
   React.useEffect(() => {
     if (window.Auth && window.Auth.isLoggedIn() && window.Auth.user) {
       onNav && onNav('home');
     }
   }, []);
+
+  const switchMode = (nextMode) => {
+    setMode(nextMode);
+    setError('');
+    setInfo('');
+    setFocused(null);
+  };
 
   const doSendCode = async () => {
     setError('');
@@ -66,13 +77,16 @@ const PageAuth = ({ onNav }) => {
       setError('请填写有效的邮箱地址');
       return;
     }
+
     setCodeSending(true);
     try {
-      const res = await window.Auth.sendCode({ email });
+      const res = mode === 'forgot'
+        ? await window.Auth.sendResetCode({ email })
+        : await window.Auth.sendCode({ email });
       setCodeCooldown(60);
       setInfo(res.devMode
-        ? '验证码已生成 (开发模式:请到后端日志查看)'
-        : '验证码已发送,请到邮箱查收');
+        ? `${res.message}（开发模式：请到后端日志查看）`
+        : (res.message || '验证码已发送,请到邮箱查收'));
     } catch (err) {
       setError(err.message || '发送失败,请稍后再试');
     } finally {
@@ -84,22 +98,28 @@ const PageAuth = ({ onNav }) => {
     e.preventDefault();
     setError('');
     setInfo('');
+
     if (!values.email || !values.password) {
-      setError('请填写邮箱和密码');
+      setError(mode === 'forgot' ? '请填写邮箱和新密码' : '请填写邮箱和密码');
       return;
     }
     if (mode === 'register' && (!values.name || values.name.length < 2)) {
       setError('请填写至少 2 个字符的笔名');
       return;
     }
-    if (mode === 'register' && values.password.length < 8) {
+    if ((mode === 'register' || mode === 'forgot') && values.password.length < 8) {
       setError('密码至少需要 8 个字符');
       return;
     }
-    if (mode === 'register' && !/^\d{6}$/.test(values.code)) {
+    if ((mode === 'register' || mode === 'forgot') && !/^\d{6}$/.test(values.code)) {
       setError('请输入 6 位邮箱验证码');
       return;
     }
+    if (mode === 'forgot' && values.password !== values.confirmPassword) {
+      setError('两次输入的密码不一致');
+      return;
+    }
+
     setLoading(true);
     try {
       if (mode === 'register') {
@@ -109,12 +129,31 @@ const PageAuth = ({ onNav }) => {
           name: values.name.trim(),
           code: values.code,
         });
-      } else {
-        await window.Auth.login({
+        onNav && onNav('home');
+        return;
+      }
+
+      if (mode === 'forgot') {
+        const res = await window.Auth.resetPassword({
           email: values.email.trim(),
           password: values.password,
+          code: values.code,
         });
+        setValues((current) => ({
+          ...current,
+          password: '',
+          confirmPassword: '',
+          code: '',
+        }));
+        switchMode('login');
+        setInfo(res.message || '密码已重置,请重新登录');
+        return;
       }
+
+      await window.Auth.login({
+        email: values.email.trim(),
+        password: values.password,
+      });
       onNav && onNav('home');
     } catch (err) {
       setError(err.message || '操作失败，请重试');
@@ -133,20 +172,22 @@ const PageAuth = ({ onNav }) => {
     type,
     value: values[name],
     focused: focused === name,
-    onChange: (e) => setValues(v => ({ ...v, [name]: e.target.value })),
+    onChange: (e) => setValues((current) => ({ ...current, [name]: e.target.value })),
     onFocus: () => setFocused(name),
     onBlur: () => setFocused(null),
     autoComplete: type === 'password'
-      ? (mode === 'register' ? 'new-password' : 'current-password')
+      ? (mode === 'login' ? 'current-password' : 'new-password')
       : (name === 'email' ? 'email' : 'off'),
   });
+
+  const tabMode = mode === 'forgot' ? 'login' : mode;
+  const showCodeField = mode === 'register' || mode === 'forgot';
 
   return (
     <div style={{
       minHeight: '100vh', display: 'grid', gridTemplateColumns: '1fr 1fr',
       background: 'var(--paper)',
     }}>
-      {/* Left — brand side */}
       <div style={{
         position: 'relative', overflow: 'hidden',
         background: 'linear-gradient(160deg, var(--accent-wash) 0%, var(--paper-2) 50%, var(--paper) 100%)',
@@ -183,13 +224,11 @@ const PageAuth = ({ onNav }) => {
         </div>
       </div>
 
-      {/* Right — form */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '48px',
       }}>
         <div style={{ width: '100%', maxWidth: 380 }}>
-          {/* tabs */}
           <div style={{
             display: 'inline-flex', position: 'relative',
             background: 'var(--paper-2)', borderRadius: 'var(--r-pill)',
@@ -198,43 +237,41 @@ const PageAuth = ({ onNav }) => {
           }}>
             <div style={{
               position: 'absolute', top: 4, bottom: 4,
-              left: mode === 'login' ? 4 : 'calc(50% + 0px)',
+              left: tabMode === 'login' ? 4 : 'calc(50% + 0px)',
               width: 'calc(50% - 4px)',
               background: 'var(--surface)',
               borderRadius: 'var(--r-pill)',
               boxShadow: 'var(--shadow-sm)',
               transition: 'left 320ms var(--ease-spring)',
             }}/>
-            {[{k:'login',l:'登录'},{k:'register',l:'注册'}].map(t => (
-              <button key={t.k} onClick={()=>{setMode(t.k); setError('');}} style={{
+            {[{ k: 'login', l: '登录' }, { k: 'register', l: '注册' }].map((tab) => (
+              <button key={tab.k} onClick={() => switchMode(tab.k)} style={{
                 position: 'relative', zIndex: 1,
                 padding: '8px 32px',
                 background: 'transparent', border: 'none',
                 fontFamily: 'var(--sans)',
                 fontSize: 14, fontWeight: 500, cursor: 'pointer',
-                color: mode === t.k ? 'var(--ink)' : 'var(--ink-3)',
+                color: tabMode === tab.k ? 'var(--ink)' : 'var(--ink-3)',
                 transition: 'color 200ms',
-              }}>{t.l}</button>
+              }}>{tab.l}</button>
             ))}
           </div>
 
-          <h1 key={'h1-'+mode} style={{
+          <h1 key={'h1-' + mode} style={{
             fontSize: 32, marginBottom: 6,
             animation: 'authFadeUp 480ms var(--ease-out)',
           }}>
-            {mode === 'login' ? '欢迎回来' : '开一间书房'}
+            {mode === 'login' ? '欢迎回来' : mode === 'register' ? '开一间书房' : '找回密码'}
           </h1>
-          <div key={'sub-'+mode} style={{
+          <div key={'sub-' + mode} style={{
             color: 'var(--ink-3)', fontSize: 14, marginBottom: 28,
             fontFamily: 'var(--serif)', fontStyle: 'italic',
             animation: 'authFadeUp 540ms 60ms var(--ease-out) both',
           }}>
-            {mode === 'login' ? 'Welcome back.' : 'Open your study.'}
+            {mode === 'login' ? 'Welcome back.' : mode === 'register' ? 'Open your study.' : 'Reset your password.'}
           </div>
 
           <form onSubmit={doSubmit} style={{ position: 'relative' }}>
-            {/* Slide-in field (笔名). paddingTop gives the floating label
-                clearance so it isn't clipped by overflow:hidden. */}
             <div style={{
               maxHeight: mode === 'register' ? 100 : 0,
               paddingTop: mode === 'register' ? 12 : 0,
@@ -245,15 +282,19 @@ const PageAuth = ({ onNav }) => {
             }}>
               <Field {...fieldProps('name')} label="笔名 / Pen Name" placeholder="例如:沈既白"/>
             </div>
-            <Field {...fieldProps('email')} label="邮箱 / Email" placeholder="you@example.com"/>
-            <Field {...fieldProps('password', 'password')} label="密码 / Password" placeholder="至少 8 位"/>
 
-            {/* Slide-in 验证码字段 (注册时) — 输入框 + 发送按钮并排 */}
+            <Field {...fieldProps('email')} label="邮箱 / Email" placeholder="you@example.com"/>
+            <Field
+              {...fieldProps('password', 'password')}
+              label={mode === 'forgot' ? '新密码 / New Password' : '密码 / Password'}
+              placeholder="至少 8 位"
+            />
+
             <div style={{
-              maxHeight: mode === 'register' ? 100 : 0,
-              paddingTop: mode === 'register' ? 12 : 0,
-              opacity: mode === 'register' ? 1 : 0,
-              transform: mode === 'register' ? 'translateY(0)' : 'translateY(-6px)',
+              maxHeight: showCodeField ? 100 : 0,
+              paddingTop: showCodeField ? 12 : 0,
+              opacity: showCodeField ? 1 : 0,
+              transform: showCodeField ? 'translateY(0)' : 'translateY(-6px)',
               overflow: 'hidden',
               transition: 'max-height 460ms var(--ease-spring), padding-top 460ms var(--ease-spring), opacity 320ms var(--ease-out), transform 460ms var(--ease-spring)',
             }}>
@@ -274,13 +315,24 @@ const PageAuth = ({ onNav }) => {
                     fontSize: 13, fontWeight: 500,
                     cursor: (codeSending || codeCooldown > 0) ? 'default' : 'pointer',
                     transition: 'all var(--d-fast) var(--ease-out)',
-                    minWidth: 96,
+                    minWidth: 112,
                   }}>
                   {codeSending ? '发送中…'
                     : codeCooldown > 0 ? `${codeCooldown}s 后重发`
-                    : '发送验证码'}
+                    : mode === 'forgot' ? '发送重置码' : '发送验证码'}
                 </button>
               </div>
+            </div>
+
+            <div style={{
+              maxHeight: mode === 'forgot' ? 100 : 0,
+              paddingTop: mode === 'forgot' ? 12 : 0,
+              opacity: mode === 'forgot' ? 1 : 0,
+              transform: mode === 'forgot' ? 'translateY(0)' : 'translateY(-6px)',
+              overflow: 'hidden',
+              transition: 'max-height 460ms var(--ease-spring), padding-top 460ms var(--ease-spring), opacity 320ms var(--ease-out), transform 460ms var(--ease-spring)',
+            }}>
+              <Field {...fieldProps('confirmPassword', 'password')} label="确认密码 / Confirm" placeholder="再次输入新密码"/>
             </div>
 
             {info && (
@@ -317,7 +369,13 @@ const PageAuth = ({ onNav }) => {
                   <span style={{ width: 16, height: 16, border: '1.5px solid var(--border-strong)', borderRadius: 4 }}/>
                   记住我
                 </label>
-                <a style={{ color: 'var(--accent)', cursor: 'pointer' }}>忘记密码?</a>
+                <a onClick={() => switchMode('forgot')} style={{ color: 'var(--accent)', cursor: 'pointer' }}>忘记密码?</a>
+              </div>
+            )}
+
+            {mode === 'forgot' && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24, fontSize: 13 }}>
+                <a onClick={() => switchMode('login')} style={{ color: 'var(--accent)', cursor: 'pointer' }}>返回登录</a>
               </div>
             )}
 
@@ -328,75 +386,79 @@ const PageAuth = ({ onNav }) => {
             }} disabled={loading}>
               {loading ? (
                 <span style={{ display: 'inline-flex', gap: 6 }}>
-                  {[0,1,2].map(i => (
+                  {[0, 1, 2].map((i) => (
                     <span key={i} style={{
-                      width: 6, height: 6, borderRadius: '50%', background: '#fff',
-                      animation: `bounce 900ms ${i*120}ms infinite var(--ease-in-out)`,
+                      width: 5, height: 5, borderRadius: '50%', background: '#fff',
+                      animation: `authDotFade 1400ms ${i * 180}ms infinite ease-in-out`,
                     }}/>
                   ))}
                 </span>
               ) : (
-                <span key={'cta-'+mode} style={{
+                <span key={'cta-' + mode} style={{
                   display: 'inline-flex', alignItems: 'center', gap: 8,
                   animation: 'authFadeUp 360ms var(--ease-out)',
                 }}>
-                  {mode === 'login' ? '进入书房' : '创建账户'}
+                  {mode === 'login' ? '进入书房' : mode === 'register' ? '创建账户' : '重置密码'}
                   <Icon name="arrow" size={15}/>
                 </span>
               )}
             </button>
           </form>
 
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            margin: '24px 0', color: 'var(--ink-4)', fontSize: 12,
-          }}>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }}/>
-            或
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }}/>
-          </div>
+          {mode !== 'forgot' && (
+            <>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                margin: '24px 0', color: 'var(--ink-4)', fontSize: 12,
+              }}>
+                <div style={{ flex: 1, height: 1, background: 'var(--border)' }}/>
+                或
+                <div style={{ flex: 1, height: 1, background: 'var(--border)' }}/>
+              </div>
 
-          <div style={{ display: 'flex', gap: 8 }}>
-            {[
-              { name: 'GitHub', provider: 'github', enabled: true, icon: (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M12 1.5A10.5 10.5 0 0 0 1.5 12c0 4.64 3 8.57 7.17 9.96.52.1.71-.23.71-.5v-1.8c-2.92.63-3.53-1.4-3.53-1.4-.48-1.2-1.17-1.53-1.17-1.53-.96-.65.07-.64.07-.64 1.06.07 1.62 1.08 1.62 1.08.94 1.6 2.46 1.14 3.06.87.1-.68.37-1.14.67-1.4-2.33-.27-4.78-1.16-4.78-5.18 0-1.14.41-2.08 1.08-2.81-.11-.27-.47-1.34.1-2.8 0 0 .88-.28 2.88 1.07a10 10 0 0 1 5.24 0c2-1.35 2.88-1.07 2.88-1.07.58 1.46.21 2.53.1 2.8.67.73 1.08 1.67 1.08 2.81 0 4.03-2.46 4.9-4.8 5.17.38.32.72.96.72 1.95v2.9c0 .28.19.61.72.5A10.5 10.5 0 0 0 22.5 12 10.5 10.5 0 0 0 12 1.5z"/>
-                </svg>
-              )},
-              { name: '微信', provider: 'wechat', enabled: false, icon: (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M8.7 4C4.97 4 2 6.58 2 9.74c0 1.82 1 3.4 2.57 4.46l-.52 1.66 1.95-1.05c.7.2 1.44.3 2.2.3h.54a4.48 4.48 0 0 1-.14-1.1c0-2.78 2.62-5.02 5.9-5.02.33 0 .65.02.97.07C14.78 5.6 12 4 8.7 4zm-2.3 2.3a.82.82 0 1 1 0 1.64.82.82 0 0 1 0-1.64zm4.6 0a.82.82 0 1 1 0 1.64.82.82 0 0 1 0-1.64zm3.6 2.85c-3 0-5.4 2.1-5.4 4.68 0 2.6 2.4 4.68 5.4 4.68.62 0 1.23-.1 1.82-.27l1.8.98-.5-1.5c1.35-.95 2.2-2.36 2.2-3.9 0-2.57-2.4-4.67-5.32-4.67zm-1.85 1.9a.68.68 0 1 1 0 1.35.68.68 0 0 1 0-1.36zm3.7 0a.68.68 0 1 1 0 1.35.68.68 0 0 1 0-1.36z"/>
-                </svg>
-              )},
-              { name: 'Google', provider: 'google', enabled: false, icon: (
-                <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                  <path fill="#4285F4" d="M21.6 12.23c0-.68-.06-1.34-.17-1.97H12v3.73h5.38a4.6 4.6 0 0 1-2 3.02v2.5h3.23c1.9-1.74 2.99-4.3 2.99-7.28z"/>
-                  <path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.43l-3.23-2.51c-.9.6-2.04.96-3.39.96-2.6 0-4.8-1.76-5.59-4.12H3.07v2.59A10 10 0 0 0 12 22z"/>
-                  <path fill="#FBBC05" d="M6.41 13.9a6 6 0 0 1 0-3.8V7.51H3.07a10 10 0 0 0 0 8.98l3.34-2.59z"/>
-                  <path fill="#EA4335" d="M12 5.98c1.47 0 2.78.5 3.82 1.5l2.86-2.86A10 10 0 0 0 12 2a10 10 0 0 0-8.93 5.51l3.34 2.59C7.2 7.74 9.4 5.98 12 5.98z"/>
-                </svg>
-              )},
-            ].map(p => (
-              <button key={p.name} className="btn"
-                onClick={p.enabled ? () => goOAuth(p.provider) : undefined}
-                disabled={!p.enabled}
-                title={p.enabled ? `使用 ${p.name} 登录` : '暂未启用'}
-                style={{
-                  flex: 1, justifyContent: 'center', fontSize: 13, gap: 8,
-                  fontFamily: 'var(--sans)',
-                  color: p.enabled ? 'var(--ink)' : 'var(--ink-4)',
-                  opacity: p.enabled ? 1 : 0.55,
-                  cursor: p.enabled ? 'pointer' : 'not-allowed',
-                }}>
-                {p.icon}
-                {p.name}
-              </button>
-            ))}
-          </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[
+                  { name: 'GitHub', provider: 'github', enabled: true, icon: (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M12 1.5A10.5 10.5 0 0 0 1.5 12c0 4.64 3 8.57 7.17 9.96.52.1.71-.23.71-.5v-1.8c-2.92.63-3.53-1.4-3.53-1.4-.48-1.2-1.17-1.53-1.17-1.53-.96-.65.07-.64.07-.64 1.06.07 1.62 1.08 1.62 1.08.94 1.6 2.46 1.14 3.06.87.1-.68.37-1.14.67-1.4-2.33-.27-4.78-1.16-4.78-5.18 0-1.14.41-2.08 1.08-2.81-.11-.27-.47-1.34.1-2.8 0 0 .88-.28 2.88 1.07a10 10 0 0 1 5.24 0c2-1.35 2.88-1.07 2.88-1.07.58 1.46.21 2.53.1 2.8.67.73 1.08 1.67 1.08 2.81 0 4.03-2.46 4.9-4.8 5.17.38.32.72.96.72 1.95v2.9c0 .28.19.61.72.5A10.5 10.5 0 0 0 22.5 12 10.5 10.5 0 0 0 12 1.5z"/>
+                    </svg>
+                  )},
+                  { name: '微信', provider: 'wechat', enabled: false, icon: (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M8.7 4C4.97 4 2 6.58 2 9.74c0 1.82 1 3.4 2.57 4.46l-.52 1.66 1.95-1.05c.7.2 1.44.3 2.2.3h.54a4.48 4.48 0 0 1-.14-1.1c0-2.78 2.62-5.02 5.9-5.02.33 0 .65.02.97.07C14.78 5.6 12 4 8.7 4zm-2.3 2.3a.82.82 0 1 1 0 1.64.82.82 0 0 1 0-1.64zm4.6 0a.82.82 0 1 1 0 1.64.82.82 0 0 1 0-1.64zm3.6 2.85c-3 0-5.4 2.1-5.4 4.68 0 2.6 2.4 4.68 5.4 4.68.62 0 1.23-.1 1.82-.27l1.8.98-.5-1.5c1.35-.95 2.2-2.36 2.2-3.9 0-2.57-2.4-4.67-5.32-4.67zm-1.85 1.9a.68.68 0 1 1 0 1.35.68.68 0 0 1 0-1.36zm3.7 0a.68.68 0 1 1 0 1.35.68.68 0 0 1 0-1.36z"/>
+                    </svg>
+                  )},
+                  { name: 'Google', provider: 'google', enabled: false, icon: (
+                    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                      <path fill="#4285F4" d="M21.6 12.23c0-.68-.06-1.34-.17-1.97H12v3.73h5.38a4.6 4.6 0 0 1-2 3.02v2.5h3.23c1.9-1.74 2.99-4.3 2.99-7.28z"/>
+                      <path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.43l-3.23-2.51c-.9.6-2.04.96-3.39.96-2.6 0-4.8-1.76-5.59-4.12H3.07v2.59A10 10 0 0 0 12 22z"/>
+                      <path fill="#FBBC05" d="M6.41 13.9a6 6 0 0 1 0-3.8V7.51H3.07a10 10 0 0 0 0 8.98l3.34-2.59z"/>
+                      <path fill="#EA4335" d="M12 5.98c1.47 0 2.78.5 3.82 1.5l2.86-2.86A10 10 0 0 0 12 2a10 10 0 0 0-8.93 5.51l3.34 2.59C7.2 7.74 9.4 5.98 12 5.98z"/>
+                    </svg>
+                  )},
+                ].map((provider) => (
+                  <button key={provider.name} className="btn"
+                    onClick={provider.enabled ? () => goOAuth(provider.provider) : undefined}
+                    disabled={!provider.enabled}
+                    title={provider.enabled ? `使用 ${provider.name} 登录` : '暂未启用'}
+                    style={{
+                      flex: 1, justifyContent: 'center', fontSize: 13, gap: 8,
+                      fontFamily: 'var(--sans)',
+                      color: provider.enabled ? 'var(--ink)' : 'var(--ink-4)',
+                      opacity: provider.enabled ? 1 : 0.55,
+                      cursor: provider.enabled ? 'pointer' : 'not-allowed',
+                    }}>
+                    {provider.icon}
+                    {provider.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
       <style>{`
-        @keyframes bounce { 0%,80%,100%{transform:translateY(0);opacity:.6} 40%{transform:translateY(-6px);opacity:1} }
+        @keyframes authDotFade { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
         @keyframes authFadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes authFadeIn { from { opacity: 0; } to { opacity: 1; } }
       `}</style>

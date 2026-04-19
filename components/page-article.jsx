@@ -1,4 +1,4 @@
-/* global React, Icon, Avatar, Cover, TopNav, EmptyState, Loading, formatDate, formatRelative, adaptArticle, renderMd */
+/* global React, Icon, Avatar, Cover, TopNav, EmptyState, Loading, formatDate, formatRelative, analyzeArticleComposition, adaptArticle, renderMd */
 
 const PageArticle = ({ onNav, articleId, user }) => {
   const [article, setArticle] = React.useState(null);
@@ -162,9 +162,17 @@ const PageArticle = ({ onNav, articleId, user }) => {
 
   const a = article;
   const bodyHtml = renderMd(a.content || '');
+  const composition = React.useMemo(() => analyzeArticleComposition(a), [a]);
+  const coverHeight = composition.shape === 'visual'
+    ? 420
+    : composition.shape === 'longform'
+      ? 300
+      : composition.shape === 'brief'
+        ? 340
+        : 360;
 
   return (
-    <div>
+    <div className="reading-stage" data-reading-profile={composition.shape}>
       <TopNav active="home" onNav={onNav} user={user}/>
       {/* Reading progress */}
       <div style={{
@@ -178,25 +186,22 @@ const PageArticle = ({ onNav, articleId, user }) => {
         }}/>
       </div>
 
-      <Cover variant={a.cover} height={320} rounded={false}/>
+      <Cover variant={a.cover} height={coverHeight} rounded={false}/>
 
-      <article style={{ maxWidth: 760, margin: '0 auto', padding: '56px 32px 120px' }}>
-        <div className="fade-up">
-          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+      <article className="reading-shell" style={{ viewTransitionName: a.id ? `reading-${a.id}` : 'reading-article' }}>
+        <div className="fade-up reading-header">
+          <div className="reading-meta">
             {(a.tags || []).map(t => <span key={t} className="tag">{t}</span>)}
-            <span style={{ fontSize: 12, color: 'var(--ink-4)', marginLeft: 8 }}>
+            <span className="reading-kicker">
               {formatDate(a.createdAt) || a.date} · {a.readTime} 分钟阅读 · {(a.views || 0).toLocaleString()} 阅读
             </span>
           </div>
-          <h1 style={{ fontSize: 52, lineHeight: 1.15, marginBottom: 12, letterSpacing: '-0.02em' }}>{a.title}</h1>
+          <h1 className="reading-title">{a.title}</h1>
           {a.titleEn && (
-            <div style={{
-              fontFamily: 'var(--serif)', fontStyle: 'italic',
-              fontSize: 22, color: 'var(--ink-3)', marginBottom: 32,
-            }}>— {a.titleEn}</div>
+            <div className="reading-subtitle">— {a.titleEn}</div>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '20px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', marginBottom: 40 }}>
+          <div className="reading-author">
             <div
               onClick={() => a.author.handle && onNav && onNav('author', a.author.handle)}
               style={{
@@ -220,52 +225,16 @@ const PageArticle = ({ onNav, articleId, user }) => {
         </div>
 
         {bodyHtml ? (
-          <div className="article-body"
+          <div className="article-body article-prose"
             dangerouslySetInnerHTML={{ __html: bodyHtml }}/>
         ) : (
-          <div className="article-body">
+          <div className="article-body article-prose">
             <p style={{ color: 'var(--ink-4)' }}>（这篇文章还没有正文。）</p>
           </div>
         )}
-        <style>{`
-          .article-body { font-family: var(--serif); font-size: 19px; line-height: 1.85; color: var(--ink-2); }
-          .article-body p { margin: 0 0 20px; }
-          .article-body h1 { font-size: 36px; margin: 48px 0 18px; color: var(--ink); font-weight: 500; letter-spacing: -0.01em; line-height: 1.25; }
-          .article-body h2 { font-size: 28px; margin: 40px 0 14px; color: var(--ink); font-weight: 500; letter-spacing: -0.005em; line-height: 1.3; }
-          .article-body h3 { font-size: 22px; margin: 32px 0 12px; color: var(--ink); font-weight: 500; }
-          .article-body h4, .article-body h5, .article-body h6 { font-size: 18px; margin: 24px 0 10px; color: var(--ink); font-weight: 500; }
-          .article-body blockquote { margin: 28px 0; padding: 14px 22px; border-left: 3px solid var(--accent); background: var(--accent-wash); font-style: italic; border-radius: 0 8px 8px 0; color: var(--ink-2); }
-          .article-body blockquote p:last-child { margin-bottom: 0; }
-          .article-body hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
-          .article-body ul, .article-body ol { margin: 0 0 20px; padding-left: 1.8em; }
-          .article-body li { margin: 6px 0; }
-          .article-body .md-center { margin: 32px 0; text-align: center; color: var(--ink); }
-          .article-body strong { color: var(--ink); font-weight: 600; }
-          .article-body em { color: var(--ink); }
-          .article-body code { background: var(--paper-2); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; color: var(--accent-deep); font-family: var(--mono); }
-          .article-body a { color: var(--accent); border-bottom: 1px solid currentColor; }
-          .article-body .md-fig { margin: 32px 0; text-align: center; }
-          .article-body .md-fig img { display: block; margin: 0 auto; max-width: 100%; max-height: 520px; height: auto; width: auto; object-fit: contain; border-radius: 10px; box-shadow: 0 2px 18px rgba(20,20,20,0.08); background: var(--paper-2); }
-          .article-body .md-fig figcaption { margin-top: 10px; font-family: var(--serif); font-style: italic; font-size: 13px; color: var(--ink-4); }
-          /* Drop-cap on the first paragraph only */
-          .article-body > p:first-of-type { font-size: 22px; color: var(--ink); }
-          .article-body > p:first-of-type::first-letter {
-            float: left; font-family: var(--serif); font-size: 72px; line-height: 0.85;
-            margin: 8px 12px 0 0; color: var(--accent);
-          }
-        `}</style>
 
         {/* Action bar (sticky bottom-floating) */}
-        <div style={{
-          position: 'fixed', bottom: 32, left: '50%', transform: 'translateX(-50%)',
-          display: 'flex', gap: 6, padding: 6,
-          background: 'var(--surface)',
-          border: '1px solid var(--border-strong)',
-          borderRadius: 'var(--r-pill)',
-          boxShadow: 'var(--shadow-lg)',
-          zIndex: 40,
-          backdropFilter: 'blur(12px)',
-        }}>
+        <div className="reading-actions">
           <button onClick={onLike} disabled={likeBusy} style={{
             display: 'inline-flex', alignItems: 'center', gap: 8,
             padding: '10px 16px', border: 'none', cursor: likeBusy ? 'wait' : 'pointer',
@@ -279,21 +248,13 @@ const PageArticle = ({ onNav, articleId, user }) => {
           }}>
             <span style={{
               display: 'inline-flex',
-              transform: liked ? 'scale(1.2)' : 'scale(1)',
-              transition: 'transform 320ms var(--ease-spring)',
+              transform: liked ? 'scale(1.08)' : 'scale(1)',
+              transition: 'transform 280ms var(--ease-out), color 280ms var(--ease-out)',
               color: liked ? 'var(--accent)' : 'inherit',
             }}>
               <Icon name="heart" size={16} style={{ fill: liked ? 'currentColor' : 'none' }}/>
             </span>
             <span style={{ fontVariantNumeric: 'tabular-nums' }}>{likes}</span>
-            {liked && (
-              <span style={{
-                position: 'absolute', top: -8, left: 20,
-                color: 'var(--accent)',
-                animation: 'floatUp 900ms var(--ease-out) forwards',
-                pointerEvents: 'none', fontSize: 16,
-              }}>♥</span>
-            )}
           </button>
           <button style={{ padding: 10, border: 'none', background: 'transparent', borderRadius: 'var(--r-pill)', cursor: 'pointer', color: 'var(--ink-2)', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
             <Icon name="chat" size={16}/>{comments.length}
@@ -310,7 +271,7 @@ const PageArticle = ({ onNav, articleId, user }) => {
         </div>
 
         {/* Comments */}
-        <div style={{ marginTop: 72 }}>
+        <div style={{ maxWidth: 'var(--reading-inline)', margin: '72px auto 0' }}>
           <h2 style={{ fontSize: 28, marginBottom: 8 }}>读者笔谈</h2>
           <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-4)', marginBottom: 28 }}>
             {comments.length} Conversations
@@ -369,10 +330,6 @@ const PageArticle = ({ onNav, articleId, user }) => {
           )}
         </div>
       </article>
-
-      <style>{`
-        @keyframes floatUp { 0%{opacity:0; transform:translateY(0) scale(.7)} 20%{opacity:1} 100%{opacity:0; transform:translateY(-30px) scale(1.3)} }
-      `}</style>
     </div>
   );
 };

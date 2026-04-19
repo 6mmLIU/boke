@@ -185,6 +185,7 @@ const Cover = ({ variant = 'warm', height = 160, children, rounded = true }) => 
       height, width: '100%', position: 'relative', overflow: 'hidden',
       borderRadius: rounded ? 'var(--r-lg) var(--r-lg) 0 0' : 0,
       background: `linear-gradient(135deg, ${a} 0%, ${b} 65%, ${c} 100%)`,
+      transition: 'height var(--d-gentle) var(--ease-in-out), border-radius var(--d-base) var(--ease-out), filter var(--d-gentle) var(--ease-out), transform var(--d-gentle) var(--ease-out)',
     }}>
       <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, opacity: 0.3, mixBlendMode: 'soft-light' }}>
         <defs>
@@ -206,130 +207,619 @@ const Cover = ({ variant = 'warm', height = 160, children, rounded = true }) => 
 // ─────────────────────────────────────────────────────────
 // Top nav — used on every public page
 // ─────────────────────────────────────────────────────────
+const escapeRegExp = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const getSearchTokens = (query) => {
+  const raw = String(query || '').trim();
+  if (!raw) return [];
+  const parts = raw.split(/\s+/).filter(Boolean);
+  const longParts = parts.filter((part) => part.length > 1);
+  return Array.from(new Set([raw, ...longParts])).slice(0, 4).sort((a, b) => b.length - a.length);
+};
+
+const Highlight = ({ text, query }) => {
+  const value = String(text || '');
+  const tokens = getSearchTokens(query);
+  if (!value || !tokens.length) return value;
+
+  const pattern = new RegExp(`(${tokens.map(escapeRegExp).join('|')})`, 'ig');
+  const parts = value.split(pattern);
+
+  return (
+    <>
+      {parts.map((part, index) => {
+        const matched = tokens.some((token) => token.toLowerCase() === part.toLowerCase());
+        if (!matched) return <React.Fragment key={index}>{part}</React.Fragment>;
+        return (
+          <mark key={index} style={{
+            background: 'var(--accent-wash)',
+            color: 'var(--accent-deep)',
+            padding: '0 0.14em',
+            borderRadius: 4,
+          }}>
+            {part}
+          </mark>
+        );
+      })}
+    </>
+  );
+};
+
+const SearchModal = ({ open, onClose, onNav }) => {
+  const inputRef = React.useRef(null);
+  const [query, setQuery] = React.useState('');
+  const [results, setResults] = React.useState({ articles: [], authors: [] });
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const [activeIndex, setActiveIndex] = React.useState(0);
+  const deferredQuery = React.useDeferredValue(query.trim());
+
+  React.useEffect(() => {
+    if (!open) {
+      setQuery('');
+      setResults({ articles: [], authors: [] });
+      setLoading(false);
+      setError('');
+      setActiveIndex(0);
+      return undefined;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      if (inputRef.current) inputRef.current.focus();
+    });
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      cancelAnimationFrame(frame);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  React.useEffect(() => {
+    if (!open) return undefined;
+
+    const nextQuery = deferredQuery.trim();
+    if (!nextQuery) {
+      setResults({ articles: [], authors: [] });
+      setError('');
+      setLoading(false);
+      return undefined;
+    }
+
+    if (!window.API?.Search?.query) {
+      setError('搜索服务尚未就绪');
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setLoading(true);
+      setError('');
+      window.API.Search.query({ q: nextQuery, limit: 5 })
+        .then((data) => {
+          if (cancelled) return;
+          setResults({
+            articles: (data.articles || []).map(adaptArticle),
+            authors: (data.authors || []).map((author) => ({
+              ...author,
+              avatar: author.avatar || (author.name ? author.name[0] : '砚'),
+            })),
+          });
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setError(err.message || '搜索失败');
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [open, deferredQuery]);
+
+  const flatResults = React.useMemo(() => [
+    ...results.articles.map((article) => ({ type: 'article', payload: article })),
+    ...results.authors.map((author) => ({ type: 'author', payload: author })),
+  ], [results]);
+
+  React.useEffect(() => {
+    setActiveIndex(0);
+  }, [deferredQuery, results.articles.length, results.authors.length]);
+
+  const openResult = (item) => {
+    if (!item) return;
+    onClose && onClose();
+    if (item.type === 'article') {
+      onNav && onNav('article', item.payload.id);
+      return;
+    }
+    onNav && onNav('author', item.payload.handle);
+  };
+
+  if (!open) return null;
+
+  const hasQuery = !!query.trim();
+  const hasResults = flatResults.length > 0;
+  const articleOffset = 0;
+  const authorOffset = results.articles.length;
+
+  const modal = (
+    <div
+      onMouseDown={() => onClose && onClose()}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 120,
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'flex-start',
+        padding: '76px 16px 24px',
+        background: 'rgba(32, 24, 18, 0.14)',
+        backdropFilter: 'blur(16px) saturate(1.08)',
+        WebkitBackdropFilter: 'blur(16px) saturate(1.08)',
+      }}>
+      <div
+        onMouseDown={(e) => e.stopPropagation()}
+        style={{
+          width: 'min(760px, calc(100vw - 32px))',
+          maxHeight: 'min(78vh, 680px)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          background: 'rgba(250, 246, 241, 0.95)',
+          border: '1px solid rgba(125, 96, 74, 0.14)',
+          borderRadius: 28,
+          boxShadow: '0 28px 90px rgba(40, 30, 22, 0.16), 0 6px 18px rgba(40, 30, 22, 0.08)',
+        }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: '18px 20px',
+          borderBottom: '1px solid var(--border)',
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.4), rgba(255,255,255,0))',
+        }}>
+          <div style={{
+            width: 38,
+            height: 38,
+            borderRadius: 12,
+            background: 'var(--accent-wash)',
+            color: 'var(--accent-deep)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <Icon name="search" size={18}/>
+          </div>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                onClose && onClose();
+                return;
+              }
+              if (!flatResults.length) return;
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setActiveIndex((index) => (index + 1) % flatResults.length);
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setActiveIndex((index) => (index - 1 + flatResults.length) % flatResults.length);
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                openResult(flatResults[activeIndex] || flatResults[0]);
+              }
+            }}
+            placeholder="搜索文章标题、摘要、标签或作者…"
+            style={{
+              flex: 1,
+              border: 'none',
+              background: 'transparent',
+              fontSize: 18,
+              color: 'var(--ink)',
+              outline: 'none',
+            }}
+          />
+          <span style={{
+            padding: '5px 8px',
+            borderRadius: 10,
+            border: '1px solid var(--border)',
+            color: 'var(--ink-4)',
+            fontFamily: 'var(--mono)',
+            fontSize: 11,
+            whiteSpace: 'nowrap',
+          }}>Esc</span>
+        </div>
+
+        <div style={{ padding: '12px 20px 0', color: 'var(--ink-4)', fontSize: 12 }}>
+          {hasQuery
+            ? 'Enter 打开当前结果，方向键切换命中项。'
+            : '可搜索标题、摘要、标签、作者名与 @handle。'}
+        </div>
+
+        <div style={{ padding: '14px 16px 16px', overflowY: 'auto' }}>
+          {!hasQuery ? (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: 12,
+            }}>
+              {[
+                { title: '搜文章', text: '输入标题、摘要或标签，快速跳到对应文章。' },
+                { title: '搜作者', text: '支持作者名、@handle 和曾用 handle 命中。' },
+                { title: '即时打开', text: '搜索结果可直接跳文章页或作者主页。' },
+              ].map((item) => (
+                <div key={item.title} className="card" style={{ padding: '18px 18px 16px' }}>
+                  <div style={{ fontSize: 15, marginBottom: 6, color: 'var(--ink)' }}>{item.title}</div>
+                  <div style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--ink-3)' }}>{item.text}</div>
+                </div>
+              ))}
+            </div>
+          ) : loading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {[0, 1, 2, 3].map((item) => (
+                <div key={item} className="card" style={{ padding: 16 }}>
+                  <div className="skeleton" style={{ height: 16, width: `${58 + item * 6}%`, marginBottom: 10 }}/>
+                  <div className="skeleton" style={{ height: 12, width: `${86 - item * 8}%` }}/>
+                </div>
+              ))}
+            </div>
+          ) : error ? (
+            <div className="card" style={{ padding: '20px 18px', color: 'var(--danger)' }}>{error}</div>
+          ) : !hasResults ? (
+            <div className="card" style={{ padding: '26px 20px', textAlign: 'center', color: 'var(--ink-4)' }}>
+              <div style={{ fontFamily: 'var(--serif)', fontSize: 22, color: 'var(--ink-2)', marginBottom: 6 }}>没有找到匹配结果</div>
+              <div style={{ fontSize: 13 }}>
+                试试标题关键词、标签，或者作者名 /
+                <span style={{ fontFamily: 'var(--mono)' }}> @handle</span>
+                。
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+              {results.articles.length > 0 && (
+                <section>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0 6px 8px',
+                    color: 'var(--ink-4)',
+                    fontSize: 12,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                  }}>
+                    <span>文章</span>
+                    <span>{results.articles.length} 项</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {results.articles.map((article, index) => {
+                      const selected = activeIndex === articleOffset + index;
+                      return (
+                        <button
+                          key={article.id}
+                          type="button"
+                          onMouseEnter={() => setActiveIndex(articleOffset + index)}
+                          onClick={() => openResult({ type: 'article', payload: article })}
+                          className="card"
+                          style={{
+                            width: '100%',
+                            padding: '16px 18px',
+                            textAlign: 'left',
+                            border: selected ? '1px solid rgba(181, 114, 74, 0.28)' : '1px solid var(--border)',
+                            background: selected ? 'rgba(199, 126, 84, 0.08)' : 'var(--surface)',
+                            boxShadow: selected ? '0 12px 30px rgba(172, 108, 70, 0.12)' : 'var(--shadow-sm)',
+                            transition: 'all var(--d-fast) var(--ease-out)',
+                          }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                            <div style={{
+                              width: 76,
+                              height: 62,
+                              overflow: 'hidden',
+                              borderRadius: 'var(--r-md)',
+                              flexShrink: 0,
+                            }}>
+                              <Cover variant={article.cover} height={62} rounded={false}/>
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                                {(article.tags || []).slice(0, 3).map((tag) => (
+                                  <span key={tag} className="tag" style={{ fontSize: 11 }}>
+                                    <Highlight text={tag} query={query}/>
+                                  </span>
+                                ))}
+                              </div>
+                              <div style={{ fontSize: 17, lineHeight: 1.35, color: 'var(--ink)', marginBottom: 6 }}>
+                                <Highlight text={article.title} query={query}/>
+                              </div>
+                              <div style={{
+                                fontSize: 13,
+                                lineHeight: 1.7,
+                                color: 'var(--ink-3)',
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                              }}>
+                                <Highlight text={article.excerpt} query={query}/>
+                              </div>
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                marginTop: 10,
+                                fontSize: 12,
+                                color: 'var(--ink-4)',
+                                flexWrap: 'wrap',
+                              }}>
+                                <span><Highlight text={article.author.name} query={query}/></span>
+                                <span>@<Highlight text={article.author.handle} query={query}/></span>
+                                <span>{article.date}</span>
+                                <span>{(article.views || 0).toLocaleString()} 阅读</span>
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+
+              {results.authors.length > 0 && (
+                <section>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0 6px 8px',
+                    color: 'var(--ink-4)',
+                    fontSize: 12,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                  }}>
+                    <span>作者</span>
+                    <span>{results.authors.length} 项</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {results.authors.map((author, index) => {
+                      const selected = activeIndex === authorOffset + index;
+                      return (
+                        <button
+                          key={author.id}
+                          type="button"
+                          onMouseEnter={() => setActiveIndex(authorOffset + index)}
+                          onClick={() => openResult({ type: 'author', payload: author })}
+                          className="card"
+                          style={{
+                            width: '100%',
+                            padding: '16px 18px',
+                            textAlign: 'left',
+                            border: selected ? '1px solid rgba(115, 137, 92, 0.24)' : '1px solid var(--border)',
+                            background: selected ? 'rgba(111, 133, 96, 0.08)' : 'var(--surface)',
+                            boxShadow: selected ? '0 12px 30px rgba(80, 101, 68, 0.10)' : 'var(--shadow-sm)',
+                            transition: 'all var(--d-fast) var(--ease-out)',
+                          }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                            <Avatar char={author.avatar} size={50} accent={selected}/>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: 17, color: 'var(--ink)' }}>
+                                  <Highlight text={author.name} query={query}/>
+                                </span>
+                                <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>@<Highlight text={author.handle} query={query}/></span>
+                              </div>
+                              <div style={{
+                                fontSize: 13,
+                                lineHeight: 1.7,
+                                color: 'var(--ink-3)',
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                              }}>
+                                <Highlight text={author.bio || '这位作者还没有写下个人简介。'} query={query}/>
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'right', color: 'var(--ink-4)', fontSize: 12, lineHeight: 1.7 }}>
+                              <div>{Number(author.articles || 0).toLocaleString()} 篇</div>
+                              <div>{Number(author.followers || 0).toLocaleString()} 读者</div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  return ReactDOM.createPortal(modal, document.body);
+};
+
 const TopNav = ({ active, onNav, user }) => {
   const u = user || (window.Auth && window.Auth.user) || null;
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [searchOpen, setSearchOpen] = React.useState(false);
   const initial = u && u.name ? u.name[0] : '游';
+  const shortcutLabel = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || '')
+    ? '⌘K'
+    : 'Ctrl K';
+
+  React.useEffect(() => {
+    const onKeyDown = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setMenuOpen(false);
+        setSearchOpen(true);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
+    <>
   <nav style={{
     position: 'sticky', top: 0, zIndex: 50,
-    background: 'rgba(247, 243, 237, 0.82)',
-    backdropFilter: 'blur(16px) saturate(1.2)',
-    WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
+    background: 'color-mix(in srgb, var(--surface) 78%, transparent)',
+    backdropFilter: 'blur(20px) saturate(1.02)',
+    WebkitBackdropFilter: 'blur(20px) saturate(1.02)',
     borderBottom: '1px solid var(--border)',
   }}>
-    <div style={{
-      maxWidth: 1280, margin: '0 auto',
-      padding: '16px 48px',
-      display: 'flex', alignItems: 'center', gap: 40,
-    }}>
-      <a href="#home" onClick={e=>{e.preventDefault(); onNav && onNav('home');}} style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        fontFamily: 'var(--serif)', fontSize: 22, fontWeight: 500,
-        color: 'var(--ink)',
-      }}>
-        <span style={{
-          width: 32, height: 32, borderRadius: 6,
-          background: 'var(--accent)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#fff', fontSize: 17,
-        }}>砚</span>
-        <span>Inkwell</span>
-      </a>
-      <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
-        {[
-          { k: 'home', l: '首页', le: 'Feed' },
-          { k: 'ranking', l: '排行榜', le: 'Rankings' },
-          { k: 'profile', l: '书房', le: 'Study' },
-        ].map(item => (
-          <a key={item.k} href={'#'+item.k}
-            onClick={e=>{e.preventDefault(); onNav && onNav(item.k);}}
-            style={{
-              padding: '8px 14px',
-              fontSize: 14,
-              color: active === item.k ? 'var(--ink)' : 'var(--ink-3)',
-              fontWeight: active === item.k ? 500 : 400,
-              borderRadius: 'var(--r-pill)',
-              background: active === item.k ? 'var(--paper-2)' : 'transparent',
-              transition: 'all var(--d-fast) var(--ease-out)',
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}>
-            {item.l}
-            <span style={{ fontSize: 11, color: 'var(--ink-4)', fontFamily: 'var(--serif)', fontStyle: 'italic' }}>{item.le}</span>
+        <div style={{
+          maxWidth: 1280, margin: '0 auto',
+          padding: '14px 40px',
+          display: 'flex', alignItems: 'center', gap: 32,
+        }}>
+          <a href="#home" onClick={e=>{e.preventDefault(); onNav && onNav('home');}} style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            fontFamily: 'var(--serif)', fontSize: 22, fontWeight: 500,
+            color: 'var(--ink)',
+            letterSpacing: '-0.01em',
+          }}>
+            <span style={{
+              width: 34, height: 34, borderRadius: 8,
+              background: 'var(--accent)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff',
+              fontFamily: 'var(--serif)',
+              fontSize: 19, fontWeight: 500,
+              lineHeight: 1,
+              boxShadow: '0 1px 2px rgba(158, 86, 54, 0.28), inset 0 1px 0 rgba(255,255,255,0.18)',
+            }}>砚</span>
+            <span>Inkwell</span>
           </a>
-        ))}
-      </div>
-      <div style={{ flex: 1 }}/>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '8px 14px',
-        background: 'var(--paper-2)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--r-pill)',
-        color: 'var(--ink-4)',
-        fontSize: 13,
-        width: 220,
-      }}>
-        <Icon name="search" size={15}/>
-        <span>搜索文章、作者…</span>
-        <span style={{
-          marginLeft: 'auto', fontSize: 11,
-          padding: '2px 6px',
-          border: '1px solid var(--border)',
-          borderRadius: 4, fontFamily: 'var(--mono)',
-        }}>⌘K</span>
-      </div>
-      {u ? (
-        <a href="#admin-editor" onClick={e=>{e.preventDefault(); onNav && onNav('admin-editor', null);}}
-          className="btn btn-ghost" style={{ fontSize: 13 }}>
-          <Icon name="feather" size={15}/>
-          写作
-        </a>
-      ) : (
-        <a href="#auth" onClick={e=>{e.preventDefault(); onNav && onNav('auth');}}
-          className="btn btn-ghost" style={{ fontSize: 13 }}>
-          登录
-        </a>
-      )}
-      <div style={{ position: 'relative' }}>
-        <div onClick={()=>{ if (u) setMenuOpen(v=>!v); else onNav && onNav('auth'); }} style={{ cursor: 'pointer' }}>
-          <Avatar char={initial} size={34} accent={!!u}/>
-        </div>
-        {menuOpen && u && (
-          <>
-            <div onClick={()=>setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 60 }}/>
-            <div style={{
-              position: 'absolute', right: 0, top: 44, zIndex: 70,
-              minWidth: 220,
-              background: 'var(--surface)',
-              border: '1px solid var(--border-strong)',
-              borderRadius: 'var(--r-md)',
-              boxShadow: 'var(--shadow-lg)',
-              padding: 6,
+          <div style={{ display: 'flex', gap: 2, marginLeft: 12 }}>
+            {[
+              { k: 'home', l: '首页', le: 'Feed' },
+              { k: 'ranking', l: '排行榜', le: 'Rankings' },
+              { k: 'profile', l: '书房', le: 'Study' },
+            ].map(item => {
+              const isActive = active === item.k;
+              return (
+                <a key={item.k} href={'#'+item.k}
+                  onClick={e=>{e.preventDefault(); onNav && onNav(item.k);}}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: 'var(--r-pill)',
+                    background: isActive ? 'var(--paper-2)' : 'transparent',
+                    transition: 'background var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out)',
+                    display: 'inline-flex', alignItems: 'baseline', gap: 7,
+                  }}>
+                  <span className="paired-label-main" style={{
+                    fontSize: 15,
+                    fontWeight: isActive ? 500 : 400,
+                    color: isActive ? 'var(--ink)' : 'var(--ink-2)',
+                  }}>{item.l}</span>
+                  <span className="paired-label-sub" style={{
+                    fontSize: 12,
+                    color: isActive ? 'var(--ink-3)' : 'var(--ink-4)',
+                    letterSpacing: '0.01em',
+                  }}>{item.le}</span>
+                </a>
+              );
+            })}
+          </div>
+          <div style={{ flex: 1 }}/>
+          <button
+            type="button"
+            onClick={() => {
+              setMenuOpen(false);
+              setSearchOpen(true);
+            }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 14px',
+              background: 'var(--paper-2)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--r-pill)',
+              color: 'var(--ink-4)',
+              fontFamily: 'var(--serif)',
+              fontSize: 14,
+              width: 248,
+              cursor: 'pointer',
+              transition: 'background var(--d-fast) var(--ease-out), border-color var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out)',
             }}>
-              <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', marginBottom: 6 }}>
-                <div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>@{u.handle}</div>
-              </div>
-              <button onClick={()=>{setMenuOpen(false); onNav && onNav('profile');}} style={menuItemStyle}>我的书房</button>
-              <button onClick={()=>{setMenuOpen(false); onNav && onNav('author', u.handle);}} style={menuItemStyle}>公开作者页</button>
-              <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin');}} style={menuItemStyle}>创作台 · Studio</button>
-              {u.role === 'ADMIN' && (
-                <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin-users');}} style={menuItemStyle}>平台管理</button>
-              )}
-              <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin-editor', null);}} style={menuItemStyle}>写新文章</button>
-              <div style={{ height: 1, background: 'var(--border)', margin: '6px 0' }}/>
-              <button onClick={()=>{
-                setMenuOpen(false);
-                window.Auth && window.Auth.logout();
-                onNav && onNav('auth');
-              }} style={{...menuItemStyle, color: 'var(--danger)'}}>登出</button>
+            <Icon name="search" size={15}/>
+            <span>搜索文章、作者…</span>
+            <span style={{
+              marginLeft: 'auto', fontSize: 10.5,
+              padding: '2px 6px',
+              border: '1px solid var(--border)',
+              borderRadius: 4, fontFamily: 'var(--mono)',
+              whiteSpace: 'nowrap',
+              letterSpacing: '0.04em',
+            }}>{shortcutLabel}</span>
+          </button>
+          {u ? (
+            <a href="#admin-editor" onClick={e=>{e.preventDefault(); onNav && onNav('admin-editor', null);}}
+              className="btn btn-ghost" style={{ fontFamily: 'var(--serif)', fontSize: 14 }}>
+              <Icon name="feather" size={15}/>
+              写作
+            </a>
+          ) : (
+            <a href="#auth" onClick={e=>{e.preventDefault(); onNav && onNav('auth');}}
+              className="btn btn-ghost" style={{ fontFamily: 'var(--serif)', fontSize: 14 }}>
+              登录
+            </a>
+          )}
+          <div style={{ position: 'relative' }}>
+            <div onClick={()=>{ if (u) setMenuOpen(v=>!v); else onNav && onNav('auth'); }} style={{ cursor: 'pointer' }}>
+              <Avatar char={initial} size={34} accent={!!u}/>
             </div>
-          </>
-        )}
-      </div>
-    </div>
-  </nav>
+            {menuOpen && u && (
+              <>
+                <div onClick={()=>setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 60 }}/>
+                <div style={{
+                  position: 'absolute', right: 0, top: 44, zIndex: 70,
+                  minWidth: 220,
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border-strong)',
+                  borderRadius: 'var(--r-md)',
+                  boxShadow: 'var(--shadow-lg)',
+                  padding: 6,
+                }}>
+                  <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', marginBottom: 6 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>@{u.handle}</div>
+                  </div>
+                  <button onClick={()=>{setMenuOpen(false); onNav && onNav('profile');}} style={menuItemStyle}>我的书房</button>
+                  <button onClick={()=>{setMenuOpen(false); onNav && onNav('author', u.handle);}} style={menuItemStyle}>公开作者页</button>
+                  <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin');}} style={menuItemStyle}>创作台 · Studio</button>
+                  {u.role === 'ADMIN' && (
+                    <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin-users');}} style={menuItemStyle}>平台管理</button>
+                  )}
+                  <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin-editor', null);}} style={menuItemStyle}>写新文章</button>
+                  <div style={{ height: 1, background: 'var(--border)', margin: '6px 0' }}/>
+                  <button onClick={()=>{
+                    setMenuOpen(false);
+                    window.Auth && window.Auth.logout();
+                    onNav && onNav('auth');
+                  }} style={{...menuItemStyle, color: 'var(--danger)'}}>登出</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </nav>
+      <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} onNav={onNav}/>
+    </>
   );
 };
 
@@ -415,11 +905,12 @@ const TweaksPanel = ({ state, set, visible, onClose }) => {
         <div style={{
           position: 'relative',
           display: 'grid', gridTemplateColumns: `repeat(${options.length}, 1fr)`,
-          background: 'var(--paper-2)',
+          background: 'color-mix(in srgb, var(--paper-2) 84%, var(--surface))',
           border: '1px solid var(--border)',
           borderRadius: 'var(--r-pill)',
           padding: 4,
           gap: 0,
+          overflow: 'hidden',
         }}>
           {/* Sliding indicator */}
           <div style={{
@@ -428,8 +919,9 @@ const TweaksPanel = ({ state, set, visible, onClose }) => {
             width: `calc(${pct}% - 8px / ${options.length})`,
             background: 'var(--surface)',
             borderRadius: 'var(--r-pill)',
-            boxShadow: '0 1px 2px rgba(74,66,58,0.08), 0 2px 6px rgba(74,66,58,0.06)',
-            transition: 'left 380ms var(--ease-spring)',
+            border: '1px solid color-mix(in srgb, var(--border-strong) 60%, transparent)',
+            boxShadow: '0 1px 2px rgba(74,66,58,0.05)',
+            transition: 'left 420ms var(--ease-spring)',
           }}/>
           {options.map(o => {
             const active = o.key === value;
@@ -492,7 +984,7 @@ const TweaksPanel = ({ state, set, visible, onClose }) => {
       style={{
         position: 'fixed', top: 88, right: 24, zIndex: 100,
         width: 320,
-        background: 'var(--surface)',
+        background: 'color-mix(in srgb, var(--surface) 90%, transparent)',
         border: '1px solid var(--border-strong)',
         borderRadius: 18,
         boxShadow: '0 20px 60px rgba(42, 38, 34, 0.14), 0 2px 8px rgba(42, 38, 34, 0.06)',
@@ -580,14 +1072,10 @@ const TweaksPanel = ({ state, set, visible, onClose }) => {
       }}>
         <span style={{
           width: 5, height: 5, borderRadius: '50%', background: 'var(--success)',
-          animation: 'pulseDot 2s infinite var(--ease-in-out)',
+          opacity: 0.7,
         }}/>
         实时生效 · 已自动保存
       </div>
-
-      <style>{`
-        @keyframes pulseDot { 0%,100%{opacity:1; transform:scale(1);} 50%{opacity:.4; transform:scale(1.6);} }
-      `}</style>
     </div>
   );
 };
@@ -615,6 +1103,52 @@ const formatRelative = (iso) => {
   if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
   if (diff < 86400 * 7) return Math.floor(diff / 86400) + ' 天前';
   return formatDate(iso);
+};
+
+const analyzeArticleComposition = (input = {}) => {
+  const title = String(input.title || '');
+  const excerpt = String(input.excerpt || '');
+  const content = String(input.content || '').replace(/\r\n/g, '\n').trim();
+  const titleChars = title.replace(/\s+/g, '').length;
+  const excerptChars = excerpt.replace(/\s+/g, '').length;
+  const bodyChars = content.replace(/\s+/g, '').length;
+  const blocks = content ? content.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean) : [];
+  const headingCount = (content.match(/^#{1,6}\s+/gm) || []).length;
+  const imageCount = (content.match(/!\[[^\]]*\]\([^)]+\)/g) || []).length;
+  const quoteCount = (content.match(/^>\s+/gm) || []).length;
+  const listCount = (content.match(/^(?:[-*+]|\d+\.)\s+/gm) || []).length;
+  const paragraphCount = blocks.filter((block) => {
+    if (/^#{1,6}\s+/.test(block)) return false;
+    if (/^(?:[-*+]|\d+\.)\s+/.test(block)) return false;
+    if (/^>\s+/.test(block)) return false;
+    if (/^!\[[^\]]*\]\([^)]+\)$/.test(block)) return false;
+    if (/^:::\s*center/i.test(block)) return false;
+    return true;
+  }).length;
+  const avgParagraphChars = paragraphCount ? Math.round(bodyChars / paragraphCount) : bodyChars;
+
+  let shape = 'brief';
+  if (imageCount >= 3 && imageCount >= headingCount) shape = 'visual';
+  else if (bodyChars >= 6000 || paragraphCount >= 14) shape = 'longform';
+  else if (bodyChars >= 1800 || paragraphCount >= 6 || headingCount >= 3) shape = 'essay';
+  else if (excerptChars >= 120 || titleChars >= 22) shape = 'feature';
+
+  const density = bodyChars >= 3600 || avgParagraphChars >= 220 ? 'dense' : bodyChars >= 1200 ? 'steady' : 'light';
+
+  return {
+    titleChars,
+    excerptChars,
+    bodyChars,
+    blockCount: blocks.length,
+    paragraphCount,
+    headingCount,
+    imageCount,
+    quoteCount,
+    listCount,
+    avgParagraphChars,
+    shape,
+    density,
+  };
 };
 
 // Decorate API article -> shape used by ArticleCard / pages
@@ -759,6 +1293,6 @@ const renderMd = (src) => {
 Object.assign(window, {
   ARTICLES, AUTHORS, COMMENTS,
   Icon, Avatar, Cover, TopNav, PageTransition, TweaksPanel,
-  formatDate, formatRelative, adaptArticle, EmptyState, Loading,
+  formatDate, formatRelative, analyzeArticleComposition, adaptArticle, EmptyState, Loading,
   renderMd,
 });

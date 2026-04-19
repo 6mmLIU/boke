@@ -71,6 +71,8 @@
         }
       });
       const [tweaksOpen, setTweaksOpen] = useState(false);
+      const densityTransitionTimer = useRef(null);
+      const themeTransitionTimer = useRef(null);
 
       const setPage = (next, value) => {
         if (next === 'article') {
@@ -138,8 +140,72 @@
         window.scrollTo(0, 0);
       }, [page, currentArticleId, currentAuthorHandle]);
 
+      useEffect(() => () => {
+        if (densityTransitionTimer.current) clearTimeout(densityTransitionTimer.current);
+        if (themeTransitionTimer.current) clearTimeout(themeTransitionTimer.current);
+        const root = document.documentElement;
+        root.removeAttribute('data-theme-transition');
+        root.removeAttribute('data-theme-animating');
+      }, []);
+
       const setPart = (patch) => {
-        setTweaks((prev) => ({ ...prev, ...patch }));
+        const nextDensity = patch?.density;
+        const nextTheme = patch?.theme;
+        const shouldAnimateDensity = nextDensity && nextDensity !== tweaks.density;
+        const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+        const shouldAnimateTheme = nextTheme && nextTheme !== tweaks.theme && !prefersReducedMotion;
+        const root = document.documentElement;
+        const applyPatch = () => {
+          if (shouldAnimateTheme) {
+            root.setAttribute('data-theme-transition', nextTheme === 'dark' ? 'to-dark' : 'to-light');
+            root.setAttribute('data-theme-animating', 'true');
+            if (themeTransitionTimer.current) clearTimeout(themeTransitionTimer.current);
+            themeTransitionTimer.current = window.setTimeout(() => {
+              root.removeAttribute('data-theme-transition');
+              root.removeAttribute('data-theme-animating');
+              themeTransitionTimer.current = null;
+            }, 860);
+          }
+          setTweaks((prev) => ({ ...prev, ...patch }));
+        };
+
+        if (!shouldAnimateDensity) {
+          applyPatch();
+          return;
+        }
+
+        const clearDensityState = () => {
+          root.removeAttribute('data-density-switching');
+          root.removeAttribute('data-tweak-transition');
+        };
+
+        if (densityTransitionTimer.current) clearTimeout(densityTransitionTimer.current);
+        root.setAttribute('data-density-switching', 'true');
+        root.setAttribute('data-tweak-transition', 'density');
+
+        const finishDensityTransition = () => {
+          if (densityTransitionTimer.current) clearTimeout(densityTransitionTimer.current);
+          densityTransitionTimer.current = window.setTimeout(() => {
+            clearDensityState();
+            densityTransitionTimer.current = null;
+          }, 40);
+        };
+
+        if (typeof document.startViewTransition === 'function') {
+          const transition = document.startViewTransition(() => {
+            ReactDOM.flushSync(() => {
+              applyPatch();
+            });
+          });
+          transition.finished.finally(finishDensityTransition);
+          return;
+        }
+
+        applyPatch();
+        densityTransitionTimer.current = window.setTimeout(() => {
+          clearDensityState();
+          densityTransitionTimer.current = null;
+        }, 680);
       };
 
       const pages = {
@@ -188,6 +254,7 @@
       const MAGNET_DISTANCE = 116;
       const [open, setOpen] = useState(false);
       const [hover, setHover] = useState(false);
+      const [tweaksHover, setTweaksHover] = useState(false);
       const [isDragging, setIsDragging] = useState(false);
       const [snapState, setSnapState] = useState({ edgeX: null, edgeY: null });
       const [snapHint, setSnapHint] = useState({ edgeX: null, edgeY: null });
@@ -394,6 +461,7 @@
       const dockTransition = isDragging
         ? 'none'
         : 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow var(--d-base) var(--ease-out), border-radius 280ms cubic-bezier(0.22, 1, 0.36, 1)';
+      const tweaksAccent = tweaksOpen || tweaksHover;
 
       return (
         <>
@@ -433,9 +501,9 @@
               display: 'flex',
               gap: 4,
               padding: 6,
-              background: 'rgba(253, 251, 246, 0.86)',
-              backdropFilter: 'blur(16px) saturate(1.2)',
-              WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
+              background: 'color-mix(in srgb, var(--surface) 84%, transparent)',
+              backdropFilter: 'blur(18px) saturate(1.02)',
+              WebkitBackdropFilter: 'blur(18px) saturate(1.02)',
               border: '1px solid var(--border)',
               borderRadius: 999,
               boxShadow: '0 10px 40px rgba(42,38,34,0.10), 0 2px 6px rgba(42,38,34,0.04)',
@@ -470,8 +538,8 @@
                       transition: `all var(--d-fast) var(--ease-out), opacity 240ms ease, transform 280ms var(--ease-spring)`,
                       transitionDelay: open ? `${index * 22}ms` : '0ms',
                     }}>
-                    {item.l}
-                    <span style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 10, opacity: 0.55 }}>{item.le}</span>
+                    <span className="paired-label-main">{item.l}</span>
+                    <span className="paired-label-sub" style={{ fontSize: 10, opacity: 0.55 }}>{item.le}</span>
                   </button>
                 );
               })}
@@ -503,9 +571,9 @@
                 alignItems: 'center',
                 gap: 2,
                 padding: 4,
-                background: 'rgba(253, 251, 246, 0.82)',
-                backdropFilter: 'blur(16px) saturate(1.2)',
-                WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
+                background: 'color-mix(in srgb, var(--surface) 82%, transparent)',
+                backdropFilter: 'blur(20px) saturate(1.02)',
+                WebkitBackdropFilter: 'blur(20px) saturate(1.02)',
                 border: '1px solid var(--border)',
                 overflow: 'hidden',
                 borderRadius: attachedRight
@@ -566,8 +634,8 @@
                   background: 'var(--accent)',
                   boxShadow: '0 0 0 3px var(--accent-wash)',
                 }}/>
-                <span style={{ fontWeight: 500, color: 'var(--ink)' }}>{current.l}</span>
-                <span style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-4)', fontSize: 11 }}>{current.le}</span>
+                <span className="paired-label-main" style={{ fontWeight: 500, color: 'var(--ink)' }}>{current.l}</span>
+                <span className="paired-label-sub" style={{ color: 'var(--ink-4)', fontSize: 11 }}>{current.le}</span>
                 <span style={{
                   display: 'inline-flex',
                   marginLeft: 2,
@@ -585,18 +653,23 @@
 
               <button
                 onClick={openTweaks}
+                onMouseEnter={() => setTweaksHover(true)}
+                onMouseLeave={() => setTweaksHover(false)}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
                   padding: '7px 12px',
-                  background: tweaksOpen ? 'var(--accent-wash)' : 'transparent',
-                  color: tweaksOpen ? 'var(--accent-deep)' : 'var(--ink-3)',
+                  background: tweaksOpen
+                    ? 'var(--accent-wash)'
+                    : (tweaksHover ? 'var(--paper-2)' : 'transparent'),
+                  color: tweaksOpen ? 'var(--accent-deep)' : (tweaksHover ? 'var(--ink-2)' : 'var(--ink-3)'),
                   border: 'none',
                   borderRadius: 999,
                   cursor: 'pointer',
                   fontFamily: 'inherit',
                   fontSize: 12,
+                  transition: 'background var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out)',
                 }}>
                 <span style={{
                   display: 'inline-flex',
@@ -605,7 +678,7 @@
                 }}>
                   <Icon name="settings" size={13}/>
                 </span>
-                调校
+                <span style={{ fontWeight: tweaksOpen ? 500 : 400 }}>调校</span>
               </button>
             </div>
           </div>
