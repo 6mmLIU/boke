@@ -1,4 +1,4 @@
-/* global React, Icon, Cover, AdminShell, EmptyState, Loading, formatDate */
+/* global React, Icon, Cover, AdminShell, EmptyState, Loading, formatDate, useIsMobile */
 
 const PageAdminArticles = ({ onNav, user }) => {
   const [articles, setArticles] = React.useState([]);
@@ -6,6 +6,7 @@ const PageAdminArticles = ({ onNav, user }) => {
   const [error, setError] = React.useState('');
   const [hovered, setHovered] = React.useState(null);
   const [busyId, setBusyId] = React.useState(null);
+  const mobile = typeof useIsMobile !== 'undefined' ? useIsMobile(768) : false;
 
   const load = React.useCallback(() => {
     let cancelled = false;
@@ -43,8 +44,8 @@ const PageAdminArticles = ({ onNav, user }) => {
 
   return (
     <AdminShell active="admin-articles" onNav={onNav} user={user}>
-      <div style={{ padding: '32px 48px 80px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
+      <div style={{ padding: mobile ? '24px 16px 60px' : '32px 48px 80px' }}>
+        <div style={{ display: 'flex', alignItems: mobile ? 'flex-start' : 'center', justifyContent: 'space-between', marginBottom: 28, flexDirection: mobile ? 'column' : 'row', gap: mobile ? 16 : 0 }}>
           <div className="fade-up">
             <h1 style={{ fontSize: 34, marginBottom: 4 }}>我的文章</h1>
             <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-4)' }}>My writings</div>
@@ -67,16 +68,52 @@ const PageAdminArticles = ({ onNav, user }) => {
           />
         ) : (
           <div className="card" style={{ overflow: 'hidden' }}>
-            <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 100px 100px 100px 90px',
-              padding: '14px 24px', borderBottom: '1px solid var(--border)',
-              fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em',
-            }}>
-              <div>标题</div><div style={{ textAlign: 'right' }}>阅读</div><div style={{ textAlign: 'right' }}>赞</div><div style={{ textAlign: 'right' }}>评论</div><div/>
-            </div>
+            {!mobile && (
+              <div style={{
+                display: 'grid', gridTemplateColumns: '1fr 100px 100px 100px 90px',
+                padding: '14px 24px', borderBottom: '1px solid var(--border)',
+                fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em',
+              }}>
+                <div>标题</div><div style={{ textAlign: 'right' }}>阅读</div><div style={{ textAlign: 'right' }}>赞</div><div style={{ textAlign: 'right' }}>评论</div><div/>
+              </div>
+            )}
             {articles.map((a, i) => {
               const isHover = hovered === a.id;
-              return (
+              return mobile ? (
+                <div key={a.id}
+                  className="fade-up"
+                  style={{
+                    padding: '16px 18px',
+                    borderTop: i ? '1px solid var(--border)' : 'none',
+                    animationDelay: i*40+'ms',
+                    opacity: busyId === a.id ? 0.5 : 1,
+                  }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                    <div style={{ width: 44, height: 32, borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
+                      <Cover variant={a.cover || 'warm'} height={32} rounded={false}/>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={()=>onNav('article', a.id)}>
+                      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{formatDate(a.createdAt)} · {a.readTime} 分钟</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', gap: 14, fontSize: 12, color: 'var(--ink-3)' }}>
+                      <span>{(a.views || 0).toLocaleString()} 阅读</span>
+                      <span>{a.likes || 0} 赞</span>
+                      <span>{a.comments || 0} 评</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button title="编辑" onClick={()=>onNav('admin-editor', a.id)} style={{ padding: 6, background: 'transparent', border: 'none', borderRadius: 6, cursor: 'pointer', color: 'var(--ink-3)' }}>
+                        <Icon name="edit" size={15}/>
+                      </button>
+                      <button title="删除" disabled={busyId === a.id} onClick={()=>onDelete(a.id)} style={{ padding: 6, background: 'transparent', border: 'none', borderRadius: 6, cursor: 'pointer', color: 'var(--danger)' }}>
+                        <Icon name="trash" size={15}/>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
                 <div key={a.id}
                   onMouseEnter={()=>setHovered(a.id)} onMouseLeave={()=>setHovered(null)}
                   className="fade-up"
@@ -115,8 +152,7 @@ const PageAdminArticles = ({ onNav, user }) => {
                   </div>
                 </div>
               );
-            })}
-          </div>
+            })}          </div>
         )}
       </div>
     </AdminShell>

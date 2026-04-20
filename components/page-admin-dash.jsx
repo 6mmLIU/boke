@@ -5,6 +5,8 @@
 // ─────────────────────────────────────────────────────────
 const AdminShell = ({ active, onNav, user, children }) => {
   const u = user || (window.Auth && window.Auth.user) || null;
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const mobile = typeof useIsMobile !== 'undefined' ? useIsMobile(768) : false;
   const items = [
     { k: 'admin', l: '概览', le: 'Overview', icon: 'chart' },
     { k: 'admin-articles', l: '文章', le: 'Articles', icon: 'doc' },
@@ -13,6 +15,100 @@ const AdminShell = ({ active, onNav, user, children }) => {
   if (u && u.role === 'ADMIN') {
     items.push({ k: 'admin-users', l: '平台', le: 'Admin', icon: 'user' });
   }
+
+  // Close sidebar on navigation
+  React.useEffect(() => { setSidebarOpen(false); }, [active]);
+
+  if (mobile) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--paper)' }}>
+        {/* Mobile top bar */}
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 40,
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '12px 16px',
+          background: 'color-mix(in srgb, var(--surface-2) 90%, transparent)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          borderBottom: '1px solid var(--border)',
+        }}>
+          <button onClick={()=>setSidebarOpen(v=>!v)} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 36, height: 36,
+            background: sidebarOpen ? 'var(--paper-2)' : 'transparent',
+            border: '1px solid ' + (sidebarOpen ? 'var(--border-strong)' : 'transparent'),
+            borderRadius: 8, cursor: 'pointer', color: 'var(--ink-2)',
+            transition: 'all var(--d-fast) var(--ease-out)',
+          }}>
+            <Icon name={sidebarOpen ? 'x' : 'menu'} size={18}/>
+          </button>
+          <a onClick={()=>onNav('home')} style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            fontFamily: 'var(--serif)', fontSize: 17, cursor: 'pointer',
+          }}>
+            <span style={{
+              width: 26, height: 26, borderRadius: 6, background: 'var(--accent)', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13,
+            }}>砚</span>
+            Inkwell
+            <span style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--sans)', padding: '2px 6px', border: '1px solid var(--border)', borderRadius: 4 }}>STUDIO</span>
+          </a>
+          <div style={{ flex: 1 }}/>
+          {u && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>@{u.handle}</span>
+              <button title="登出" onClick={()=>{
+                window.Auth && window.Auth.logout();
+                onNav && onNav('home');
+              }} style={{
+                background: 'transparent', border: '1px solid var(--border)',
+                color: 'var(--ink-4)', borderRadius: 6, cursor: 'pointer',
+                padding: '4px 6px',
+              }}>
+                <Icon name="x" size={12}/>
+              </button>
+            </div>
+          )}
+        </div>
+        {/* Mobile sidebar overlay */}
+        {sidebarOpen && (
+          <>
+            <div onClick={()=>setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 38, background: 'rgba(0,0,0,0.15)' }}/>
+            <div style={{
+              position: 'fixed', top: 61, left: 0, bottom: 0, zIndex: 39,
+              width: 260,
+              background: 'var(--surface-2)',
+              borderRight: '1px solid var(--border)',
+              padding: '16px 12px',
+              display: 'flex', flexDirection: 'column', gap: 4,
+              overflowY: 'auto',
+              boxShadow: '4px 0 20px rgba(0,0,0,0.08)',
+            }}>
+              {items.map(it => (
+                <button key={it.k} onClick={()=>{ setSidebarOpen(false); onNav(it.k, it.k === 'admin-editor' ? null : undefined); }} style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '12px 14px',
+                  background: active === it.k ? 'var(--paper)' : 'transparent',
+                  border: '1px solid ' + (active === it.k ? 'var(--border)' : 'transparent'),
+                  borderRadius: 'var(--r-md)',
+                  color: active === it.k ? 'var(--ink)' : 'var(--ink-3)',
+                  fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
+                  fontWeight: active === it.k ? 500 : 400, textAlign: 'left',
+                  transition: 'all var(--d-fast) var(--ease-out)',
+                }}>
+                  <Icon name={it.icon} size={16}/>
+                  <span className="paired-label-main">{it.l}</span>
+                  <span className="paired-label-sub" style={{ color: 'var(--ink-4)', fontSize: 11, marginLeft: 'auto' }}>{it.le}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        <main>{children}</main>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '248px 1fr', minHeight: '100vh', background: 'var(--paper)' }}>
       <aside style={{
@@ -46,8 +142,8 @@ const AdminShell = ({ active, onNav, user, children }) => {
             transition: 'all var(--d-fast) var(--ease-out)',
           }}>
             <Icon name={it.icon} size={16}/>
-            <span>{it.l}</span>
-            <span style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-4)', fontSize: 11, marginLeft: 'auto' }}>{it.le}</span>
+            <span className="paired-label-main">{it.l}</span>
+            <span className="paired-label-sub" style={{ color: 'var(--ink-4)', fontSize: 11, marginLeft: 'auto' }}>{it.le}</span>
           </button>
         ))}
         <div style={{ flex: 1 }}/>
@@ -83,6 +179,7 @@ const PageAdminDashboard = ({ onNav, user }) => {
   const [data, setData] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
+  const mobile = typeof useIsMobile !== 'undefined' ? useIsMobile(768) : false;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -153,10 +250,10 @@ const PageAdminDashboard = ({ onNav, user }) => {
 
   return (
     <AdminShell active="admin" onNav={onNav} user={user}>
-      <div style={{ padding: '32px 48px 80px' }}>
+      <div style={{ padding: mobile ? '24px 16px 60px' : '32px 48px 80px' }}>
         <div className="fade-up" style={{ marginBottom: 8 }}>
           <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--accent)', fontSize: 14, marginBottom: 8 }}>— 书斋近况 · Studio</div>
-          <h1 style={{ fontSize: 36, marginBottom: 6 }}>{greet},{user ? user.name : '作者'}</h1>
+          <h1 style={{ fontSize: mobile ? 28 : 36, marginBottom: 6 }}>{greet},{user ? user.name : '作者'}</h1>
           <div style={{ color: 'var(--ink-3)' }}>
             {totalArticles > 0
               ? <>你已发表 <b style={{ color: 'var(--ink)' }}>{totalArticles}</b> 篇文章,共获得 <b style={{ color: 'var(--ink)' }}>{totalViews.toLocaleString()}</b> 次阅读。</>
@@ -165,7 +262,7 @@ const PageAdminDashboard = ({ onNav, user }) => {
         </div>
 
         {/* stat cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, margin: '32px 0' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: mobile ? 12 : 16, margin: '32px 0' }}>
           {stats.map((s, i) => (
             <div key={s.label} className="card fade-up" style={{ padding: '20px 22px', animationDelay: i*80+'ms' }}>
               <div style={{ fontSize: 12, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{s.label}</div>
@@ -205,7 +302,7 @@ const PageAdminDashboard = ({ onNav, user }) => {
         )}
 
         {/* Two columns */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 24 }}>
           <div className="card" style={{ padding: 24 }}>
             <div style={{ fontFamily: 'var(--serif)', fontSize: 18, marginBottom: 4 }}>最热文章</div>
             <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-4)', marginBottom: 16 }}>Top articles</div>

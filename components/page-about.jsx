@@ -1,14 +1,16 @@
-/* global React, TopNav, EmptyState */
+/* global React, TopNav, EmptyState, useIsMobile */
 
-const PageAbout = ({ onNav, user }) => (
+const PageAbout = ({ onNav, user }) => {
+  const mobile = typeof useIsMobile !== 'undefined' ? useIsMobile(768) : false;
+  return (
   <div>
     <TopNav active="home" onNav={onNav} user={user}/>
-    <div style={{ maxWidth: 980, margin: '0 auto', padding: '72px 48px 120px' }}>
-      <div className="fade-up" style={{ marginBottom: 42 }}>
-        <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--accent)', fontSize: 15, marginBottom: 10 }}>
+    <div style={{ maxWidth: 980, margin: '0 auto', padding: mobile ? '40px 16px 80px' : '72px 48px 120px' }}>
+      <div className="fade-up" style={{ marginBottom: mobile ? 28 : 42 }}>
+        <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--accent)', fontSize: mobile ? 13 : 15, marginBottom: 10 }}>
           — 关于 Inkwell · About
         </div>
-        <h1 style={{ fontSize: 58, lineHeight: 1.08, marginBottom: 18, letterSpacing: '-0.03em' }}>
+        <h1 style={{ fontSize: mobile ? 32 : 58, lineHeight: 1.08, marginBottom: 18, letterSpacing: '-0.03em' }}>
           给想法一方砚台。<br/>给写作者一间书房。
         </h1>
         <div style={{ maxWidth: 720, fontSize: 17, color: 'var(--ink-3)', lineHeight: 1.9 }}>
@@ -16,7 +18,7 @@ const PageAbout = ({ onNav, user }) => (
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1.2fr 0.8fr', gap: 24 }}>
         <div className="card" style={{ padding: 30 }}>
           <div style={{ fontFamily: 'var(--serif)', fontSize: 24, marginBottom: 10 }}>现在的方向</div>
           <div style={{ color: 'var(--ink-3)', lineHeight: 1.9, fontSize: 15 }}>
@@ -42,5 +44,6 @@ const PageAbout = ({ onNav, user }) => (
     </div>
   </div>
 );
+};
 
 window.PageAbout = PageAbout;

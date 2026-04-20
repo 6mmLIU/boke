@@ -1,4 +1,4 @@
-/* global React, API, Icon, Avatar, Cover, TopNav, EmptyState, Loading, adaptArticle, SlidingTabs */
+/* global React, API, Icon, Avatar, Cover, TopNav, EmptyState, Loading, adaptArticle, SlidingTabs, useIsMobile */
 
 // ─────────────────────────────────────────────────────────
 // Article card — opens article by id
@@ -100,6 +100,7 @@ const PageHome = ({ onNav, tweaks, user }) => {
   const [loading, setLoading] = React.useState(true);
   const [articles, setArticles] = React.useState([]);
   const [error, setError] = React.useState('');
+  const mobile = useIsMobile(768);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -134,17 +135,17 @@ const PageHome = ({ onNav, tweaks, user }) => {
   return (
     <div>
       <TopNav active="home" onNav={onNav} user={user}/>
-      <div className="feed-shell density-layout" style={{ maxWidth: 1280, margin: '0 auto', padding: '40px 48px 80px', viewTransitionName: 'home-feed-shell' }}>
+      <div className="feed-shell density-layout" style={{ maxWidth: 1280, margin: '0 auto', padding: mobile ? '24px 16px 60px' : '40px 48px 80px', viewTransitionName: 'home-feed-shell' }}>
         {/* Hero */}
-        <div className="feed-hero density-layout" style={{ marginBottom: 48, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 40 }}>
+        <div className="feed-hero density-layout" style={{ marginBottom: mobile ? 28 : 48, display: 'flex', alignItems: mobile ? 'flex-start' : 'flex-end', justifyContent: 'space-between', gap: mobile ? 20 : 40, flexDirection: mobile ? 'column' : 'row' }}>
           <div className="fade-up" style={{ viewTransitionName: 'home-feed-hero' }}>
-            <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--accent)', fontSize: 15, marginBottom: 10 }}>
+            <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--accent)', fontSize: mobile ? 13 : 15, marginBottom: mobile ? 8 : 10 }}>
               — 本周编辑精选 · Editor's Picks
             </div>
-            <h1 className="density-copy" style={{ fontSize: 56, lineHeight: 1.1, marginBottom: 14, letterSpacing: '-0.02em' }}>
+            <h1 className="density-copy" style={{ fontSize: mobile ? 36 : 56, lineHeight: 1.1, marginBottom: mobile ? 10 : 14, letterSpacing: '-0.02em' }}>
               慢一点,<br/>想得更远。
             </h1>
-            <div className="density-copy" style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 20, color: 'var(--ink-3)' }}>
+            <div className="density-copy" style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: mobile ? 16 : 20, color: 'var(--ink-3)' }}>
               Slow down to think further.
             </div>
           </div>
@@ -174,16 +175,20 @@ const PageHome = ({ onNav, tweaks, user }) => {
         </div>
 
         {loading ? (
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 24 }}>
-            <div className="skeleton" style={{ height: 480 }}/>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-              <div className="skeleton" style={{ height: 228 }}/>
-              <div className="skeleton" style={{ height: 228 }}/>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-              <div className="skeleton" style={{ height: 228 }}/>
-              <div className="skeleton" style={{ height: 228 }}/>
-            </div>
+          <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '2fr 1fr 1fr', gap: 24 }}>
+            <div className="skeleton" style={{ height: mobile ? 280 : 480 }}/>
+            {!mobile && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  <div className="skeleton" style={{ height: 228 }}/>
+                  <div className="skeleton" style={{ height: 228 }}/>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  <div className="skeleton" style={{ height: 228 }}/>
+                  <div className="skeleton" style={{ height: 228 }}/>
+                </div>
+              </>
+            )}
           </div>
         ) : error ? (
           <EmptyState icon="x" title="加载失败" subtitle={error}/>
@@ -201,6 +206,12 @@ const PageHome = ({ onNav, tweaks, user }) => {
           <>
             {/* Featured row — only show if we have multiple articles */}
             {articles.length >= 5 ? (
+              mobile ? (
+                <div className="density-layout" style={{ display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 28 }}>
+                  <ArticleCard article={featured} onOpen={openArticle} onOpenAuthor={openAuthor} featured delay={0}/>
+                  {sideTop.concat(sideBot).map((a, i) => <ArticleCard key={a.id} article={a} onOpen={openArticle} onOpenAuthor={openAuthor} delay={80+i*60}/>)}
+                </div>
+              ) : (
               <div className="density-layout" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 24, marginBottom: 32, viewTransitionName: 'home-feature-grid' }}>
                 <ArticleCard article={featured} onOpen={openArticle} onOpenAuthor={openAuthor} featured delay={0}/>
                 <div className="density-layout" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -210,9 +221,10 @@ const PageHome = ({ onNav, tweaks, user }) => {
                   {sideBot.map((a, i) => <ArticleCard key={a.id} article={a} onOpen={openArticle} onOpenAuthor={openAuthor} compact delay={240+i*80}/>)}
                 </div>
               </div>
+              )
             ) : (
               <div className="density-layout" style={{
-                display: 'grid', gridTemplateColumns: compact ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: 24,
+                display: 'grid', gridTemplateColumns: mobile ? '1fr' : (compact ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)'), gap: mobile ? 20 : 24,
               }}>
                 {articles.map((a, i) => (
                   <ArticleCard key={a.id} article={a} onOpen={openArticle} onOpenAuthor={openAuthor} delay={i*60}/>
@@ -224,14 +236,14 @@ const PageHome = ({ onNav, tweaks, user }) => {
               <>
                 <div className="density-layout" style={{
                   display: 'flex', alignItems: 'center', gap: 14,
-                  margin: '48px 0 28px', color: 'var(--ink-3)',
+                  margin: mobile ? '32px 0 20px' : '48px 0 28px', color: 'var(--ink-3)',
                 }}>
-                  <span className="density-copy" style={{ fontFamily: 'var(--serif)', fontSize: 22, color: 'var(--ink)' }}>继续阅读</span>
+                  <span className="density-copy" style={{ fontFamily: 'var(--serif)', fontSize: mobile ? 18 : 22, color: 'var(--ink)' }}>继续阅读</span>
                   <span className="density-copy" style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-4)' }}>Continue reading</span>
                   <div style={{ flex: 1, height: 1, background: 'var(--border)' }}/>
                 </div>
                 <div className="density-layout" style={{
-                  display: 'grid', gridTemplateColumns: compact ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: 24,
+                  display: 'grid', gridTemplateColumns: mobile ? '1fr' : (compact ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)'), gap: mobile ? 20 : 24,
                 }}>
                   {remaining.map((a, i) => (
                     <ArticleCard key={a.id} article={a} onOpen={openArticle} onOpenAuthor={openAuthor} delay={i*60}/>

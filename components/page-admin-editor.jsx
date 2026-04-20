@@ -1,4 +1,4 @@
-/* global React, Icon, AdminShell, Loading, analyzeArticleComposition, renderMd */
+/* global React, Icon, AdminShell, Loading, analyzeArticleComposition, renderMd, useIsMobile */
 
 // Resize clipboard or local images before uploading to the backend.
 // Keeps longest edge <= maxDim so writing stays lightweight.
@@ -41,6 +41,8 @@ const COVER_OPTIONS = [
 
 const PageAdminEditor = ({ onNav, articleId, user }) => {
   const isEdit = !!articleId;
+  const mobile = typeof useIsMobile !== 'undefined' ? useIsMobile(768) : false;
+  const [editorTab, setEditorTab] = React.useState('edit'); // 'edit' | 'preview' — mobile only
   const [title, setTitle] = React.useState('');
   const [titleEn, setTitleEn] = React.useState('');
   const [excerpt, setExcerpt] = React.useState('');
@@ -334,10 +336,11 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
         {/* Top bar */}
         <div style={{
-          padding: '18px 40px',
+          padding: mobile ? '14px 16px' : '18px 40px',
           borderBottom: '1px solid var(--border)',
           background: 'linear-gradient(180deg, var(--surface) 0%, color-mix(in srgb, var(--surface) 94%, transparent) 100%)',
-          display: 'flex', alignItems: 'center', gap: 20,
+          display: 'flex', alignItems: 'center', gap: mobile ? 12 : 20,
+          flexWrap: mobile ? 'wrap' : 'nowrap',
         }}>
           <button
             onClick={()=>onNav('admin-articles')}
@@ -357,18 +360,20 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
               gap: 6,
               transition: 'color var(--d-fast) var(--ease-out), transform var(--d-fast) var(--ease-out)',
             }}>
-            <span style={{ fontSize: 18, lineHeight: 1 }}>←</span> 文章
+            <span style={{ fontSize: 18, lineHeight: 1 }}>←</span> {mobile ? '' : '文章'}
           </button>
-          <div style={{
-            width: 1,
-            height: 22,
-            background: 'var(--border-strong)',
-            opacity: 0.7,
-          }}/>
+          {!mobile && (
+            <div style={{
+              width: 1,
+              height: 22,
+              background: 'var(--border-strong)',
+              opacity: 0.7,
+            }}/>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
             <div style={{
               fontFamily: 'var(--serif)',
-              fontSize: 22,
+              fontSize: mobile ? 18 : 22,
               fontWeight: 500,
               letterSpacing: '-0.015em',
               color: 'var(--ink)',
@@ -376,15 +381,17 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
             }}>
               {isEdit ? '编辑文章' : '新建文章'}
             </div>
-            <div style={{
-              fontFamily: 'var(--serif)',
-              fontStyle: 'italic',
-              fontSize: 12,
-              color: 'var(--ink-4)',
-              letterSpacing: '0.01em',
-            }}>
-              {isEdit ? '— Refining a draft' : '— A new page'}
-            </div>
+            {!mobile && (
+              <div style={{
+                fontFamily: 'var(--serif)',
+                fontStyle: 'italic',
+                fontSize: 12,
+                color: 'var(--ink-4)',
+                letterSpacing: '0.01em',
+              }}>
+                {isEdit ? '— Refining a draft' : '— A new page'}
+              </div>
+            )}
           </div>
           <div style={{ flex: 1 }}/>
           <div style={{
@@ -393,27 +400,29 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
             gap: 8,
             color: 'var(--ink-4)',
             fontFamily: 'var(--serif)',
-            fontSize: 13,
+            fontSize: mobile ? 12 : 13,
             letterSpacing: '0.01em',
           }}>
             {uploadingImage ? (
               <span style={{ fontStyle: 'italic', color: 'var(--accent-deep)' }}>图片上传中…</span>
             ) : (
               <>
-                <span style={{ color: 'var(--ink-2)', fontSize: 15 }}>{wordCount}</span>
+                <span style={{ color: 'var(--ink-2)', fontSize: mobile ? 13 : 15 }}>{wordCount}</span>
                 <span>字</span>
-                <span style={{ color: 'var(--ink-5)' }}>·</span>
-                <span style={{ fontStyle: 'italic' }}>约 {est} 分钟</span>
+                {!mobile && (
+                  <>
+                    <span style={{ color: 'var(--ink-5)' }}>·</span>
+                    <span style={{ fontStyle: 'italic' }}>约 {est} 分钟</span>
+                  </>
+                )}
               </>
             )}
           </div>
           <button
             onClick={onPublish}
             disabled={publishing}
-            onMouseEnter={(e)=>{ if (!publishing) { e.currentTarget.style.boxShadow = '0 10px 24px color-mix(in srgb, var(--accent) 28%, transparent), 0 2px 6px color-mix(in srgb, var(--accent) 14%, transparent)'; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
-            onMouseLeave={(e)=>{ e.currentTarget.style.boxShadow = '0 4px 14px color-mix(in srgb, var(--accent) 22%, transparent), 0 1px 3px color-mix(in srgb, var(--accent) 10%, transparent)'; e.currentTarget.style.transform = 'translateY(0)'; }}
             style={{
-              padding: '11px 26px',
+              padding: mobile ? '9px 18px' : '11px 26px',
               border: 'none',
               borderRadius: 999,
               background: publishing
@@ -421,7 +430,7 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
                 : 'linear-gradient(140deg, var(--accent) 0%, var(--accent-deep) 100%)',
               color: '#fff',
               fontFamily: 'var(--serif)',
-              fontSize: 15,
+              fontSize: mobile ? 14 : 15,
               letterSpacing: '0.04em',
               fontWeight: 500,
               cursor: publishing ? 'wait' : 'pointer',
@@ -440,18 +449,49 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
           }}>{error}</div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', flex: 1, minHeight: 0 }}>
+        <div style={mobile ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : { display: 'grid', gridTemplateColumns: '1fr 1fr', flex: 1, minHeight: 0 }}>
+          {/* Mobile tab switcher */}
+          {mobile && (
+            <div style={{
+              display: 'flex', gap: 0,
+              borderBottom: '1px solid var(--border)',
+              background: 'var(--surface)',
+            }}>
+              {[
+                { k: 'edit', l: '编辑' },
+                { k: 'preview', l: '预览' },
+              ].map(t => (
+                <button key={t.k} onClick={()=>setEditorTab(t.k)} style={{
+                  flex: 1,
+                  padding: '12px 0',
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: '2px solid ' + (editorTab === t.k ? 'var(--accent)' : 'transparent'),
+                  color: editorTab === t.k ? 'var(--ink)' : 'var(--ink-4)',
+                  fontWeight: editorTab === t.k ? 500 : 400,
+                  fontSize: 14,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  transition: 'all var(--d-fast) var(--ease-out)',
+                }}>{t.l}</button>
+              ))}
+            </div>
+          )}
           {/* Editor pane */}
           <div style={{
-            borderRight: '1px solid var(--border)',
-            display: 'flex', flexDirection: 'column', minHeight: 0,
+            borderRight: mobile ? 'none' : '1px solid var(--border)',
+            display: (mobile && editorTab !== 'edit') ? 'none' : 'flex',
+            flexDirection: 'column', minHeight: 0,
             background: 'var(--surface-2)',
+            flex: mobile ? 1 : undefined,
           }}>
             {/* Toolbar */}
             <div style={{
-              display: 'flex', gap: 2, padding: '10px 32px',
+              display: 'flex', gap: 2, padding: mobile ? '8px 16px' : '10px 32px',
               borderBottom: '1px solid var(--border)',
               background: 'var(--surface)',
+              overflowX: mobile ? 'auto' : 'visible',
+              WebkitOverflowScrolling: 'touch',
             }}>
               {tools.map(t => (
                 <button key={t.k} onClick={t.a} title={t.title}
@@ -473,11 +513,11 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
             </div>
             {imagePanelOpen && (
               <div style={{
-                padding: '18px 32px',
+                padding: mobile ? '14px 16px' : '18px 32px',
                 borderBottom: '1px solid var(--border)',
                 background: 'rgba(253, 251, 246, 0.8)',
                 display: 'grid',
-                gridTemplateColumns: '1fr auto',
+                gridTemplateColumns: mobile ? '1fr' : '1fr auto',
                 gap: 16,
                 alignItems: 'end',
               }}>
@@ -530,13 +570,13 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
                 </div>
               </div>
             )}
-            <div style={{ padding: '40px 64px', overflowY: 'auto', flex: 1 }}>
+            <div style={{ padding: mobile ? '24px 16px' : '40px 64px', overflowY: 'auto', flex: 1 }}>
                 <input
                   value={title} onChange={e=>setTitle(e.target.value)}
                 placeholder="一个可以说一整晚的标题…"
                 style={{
                   width: '100%', border: 'none', outline: 'none', background: 'transparent',
-                  fontFamily: 'var(--serif)', fontSize: 36, fontWeight: 500,
+                  fontFamily: 'var(--serif)', fontSize: mobile ? 26 : 36, fontWeight: 500,
                   color: 'var(--ink)', marginBottom: 8,
                   letterSpacing: '-0.02em',
                 }}/>
@@ -632,7 +672,13 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
           <div
             className="preview-stage reading-stage"
             data-reading-profile={previewProfile.shape}
-            style={{ padding: 'clamp(28px, 4vw, 56px) clamp(20px, 5vw, 64px)', overflowY: 'auto', background: 'var(--paper)' }}>
+            style={{
+              padding: mobile ? 'clamp(20px, 4vw, 32px) 16px' : 'clamp(28px, 4vw, 56px) clamp(20px, 5vw, 64px)',
+              overflowY: 'auto',
+              background: 'var(--paper)',
+              display: (mobile && editorTab !== 'preview') ? 'none' : 'block',
+              flex: mobile ? 1 : undefined,
+            }}>
             <div className="reading-shell">
               <div className="reading-header">
                 <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--accent)', fontSize: 13, marginBottom: 10 }}>

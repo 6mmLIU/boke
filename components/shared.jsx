@@ -763,6 +763,8 @@ const TopNav = ({ active, onNav, user }) => {
   const u = user || (window.Auth && window.Auth.user) || null;
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
+  const mobile = useIsMobile(768);
   const initial = u && u.name ? u.name[0] : '游';
   const shortcutLabel = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || '')
     ? '⌘K'
@@ -773,6 +775,7 @@ const TopNav = ({ active, onNav, user }) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setMenuOpen(false);
+        setMobileNavOpen(false);
         setSearchOpen(true);
       }
     };
@@ -780,6 +783,9 @@ const TopNav = ({ active, onNav, user }) => {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
+
+  // Close mobile nav on page change
+  React.useEffect(() => { setMobileNavOpen(false); }, [active]);
 
   return (
     <>
@@ -792,141 +798,268 @@ const TopNav = ({ active, onNav, user }) => {
   }}>
         <div style={{
           maxWidth: 1280, margin: '0 auto',
-          padding: '14px 40px',
-          display: 'flex', alignItems: 'center', gap: 32,
+          padding: mobile ? '12px 16px' : '14px 40px',
+          display: 'flex', alignItems: 'center', gap: mobile ? 12 : 32,
         }}>
           <a href="#home" onClick={e=>{e.preventDefault(); onNav && onNav('home');}} style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            fontFamily: 'var(--serif)', fontSize: 22, fontWeight: 500,
+            display: 'flex', alignItems: 'center', gap: mobile ? 8 : 12,
+            fontFamily: 'var(--serif)', fontSize: mobile ? 18 : 22, fontWeight: 500,
             color: 'var(--ink)',
             letterSpacing: '-0.01em',
           }}>
             <span style={{
-              width: 34, height: 34, borderRadius: 8,
+              width: mobile ? 30 : 34, height: mobile ? 30 : 34, borderRadius: 8,
               background: 'var(--accent)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: '#fff',
               fontFamily: 'var(--serif)',
-              fontSize: 19, fontWeight: 500,
+              fontSize: mobile ? 16 : 19, fontWeight: 500,
               lineHeight: 1,
               boxShadow: '0 1px 2px rgba(158, 86, 54, 0.28), inset 0 1px 0 rgba(255,255,255,0.18)',
             }}>砚</span>
-            <span>Inkwell</span>
+            {!mobile && <span>Inkwell</span>}
           </a>
-          <SlidingTabs
-            containerStyle={{ marginLeft: 12 }}
-            padding={0}
-            gap={2}
-            value={active || 'home'}
-            onChange={(k) => onNav && onNav(k)}
-            pillStyle={{ background: 'var(--paper-2)', boxShadow: 'none', border: 'none' }}
-            items={[
-              { key: 'home', l: '首页', le: 'Feed' },
-              { key: 'ranking', l: '排行榜', le: 'Rankings' },
-              { key: 'profile', l: '书房', le: 'Study' },
-            ]}
-            renderItem={(item, isActive) => (
-              <span style={{
-                display: 'inline-flex', alignItems: 'baseline', gap: 7,
-                padding: '8px 16px',
-                transition: 'color var(--d-fast) var(--ease-out)',
-              }}>
-                <span className="paired-label-main" style={{
-                  fontSize: 15,
-                  fontWeight: isActive ? 500 : 400,
-                  color: isActive ? 'var(--ink)' : 'var(--ink-2)',
-                  transition: 'color var(--d-base) var(--ease-out), font-weight var(--d-base) var(--ease-out)',
-                }}>{item.l}</span>
-                <span className="paired-label-sub" style={{
-                  fontSize: 12,
-                  color: isActive ? 'var(--ink-3)' : 'var(--ink-4)',
-                  letterSpacing: '0.01em',
-                  transition: 'color var(--d-base) var(--ease-out)',
-                }}>{item.le}</span>
-              </span>
-            )}
-          />
-          <div style={{ flex: 1 }}/>
-          <button
-            type="button"
-            onClick={() => {
-              setMenuOpen(false);
-              setSearchOpen(true);
-            }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '8px 14px',
-              background: 'var(--paper-2)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--r-pill)',
-              color: 'var(--ink-4)',
-              fontFamily: 'var(--serif)',
-              fontSize: 14,
-              width: 248,
-              cursor: 'pointer',
-              transition: 'background var(--d-fast) var(--ease-out), border-color var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out)',
-            }}>
-            <Icon name="search" size={15}/>
-            <span>搜索文章、作者…</span>
-            <span style={{
-              marginLeft: 'auto', fontSize: 10.5,
-              padding: '2px 6px',
-              border: '1px solid var(--border)',
-              borderRadius: 4, fontFamily: 'var(--mono)',
-              whiteSpace: 'nowrap',
-              letterSpacing: '0.04em',
-            }}>{shortcutLabel}</span>
-          </button>
-          {u ? (
-            <a href="#admin-editor" onClick={e=>{e.preventDefault(); onNav && onNav('admin-editor', null);}}
-              className="btn btn-ghost" style={{ fontFamily: 'var(--serif)', fontSize: 14 }}>
-              <Icon name="feather" size={15}/>
-              写作
-            </a>
-          ) : (
-            <a href="#auth" onClick={e=>{e.preventDefault(); onNav && onNav('auth');}}
-              className="btn btn-ghost" style={{ fontFamily: 'var(--serif)', fontSize: 14 }}>
-              登录
-            </a>
-          )}
-          <div style={{ position: 'relative' }}>
-            <div onClick={()=>{ if (u) setMenuOpen(v=>!v); else onNav && onNav('auth'); }} style={{ cursor: 'pointer' }}>
-              <Avatar char={initial} size={34} accent={!!u}/>
-            </div>
-            {menuOpen && u && (
-              <>
-                <div onClick={()=>setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 60 }}/>
-                <div style={{
-                  position: 'absolute', right: 0, top: 44, zIndex: 70,
-                  minWidth: 220,
-                  background: 'var(--surface)',
-                  border: '1px solid var(--border-strong)',
-                  borderRadius: 'var(--r-md)',
-                  boxShadow: 'var(--shadow-lg)',
-                  padding: 6,
+          {!mobile && (
+            <SlidingTabs
+              containerStyle={{ marginLeft: 12 }}
+              padding={0}
+              gap={2}
+              value={active || 'home'}
+              onChange={(k) => onNav && onNav(k)}
+              pillStyle={{ background: 'var(--paper-2)', boxShadow: 'none', border: 'none' }}
+              items={[
+                { key: 'home', l: '首页', le: 'Feed' },
+                { key: 'ranking', l: '排行榜', le: 'Rankings' },
+                { key: 'profile', l: '书房', le: 'Study' },
+              ]}
+              renderItem={(item, isActive) => (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'baseline', gap: 7,
+                  padding: '8px 16px',
+                  transition: 'color var(--d-fast) var(--ease-out)',
                 }}>
-                  <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', marginBottom: 6 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div>
-                    <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>@{u.handle}</div>
-                  </div>
-                  <button onClick={()=>{setMenuOpen(false); onNav && onNav('profile');}} style={menuItemStyle}>我的书房</button>
-                  <button onClick={()=>{setMenuOpen(false); onNav && onNav('author', u.handle);}} style={menuItemStyle}>公开作者页</button>
-                  <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin');}} style={menuItemStyle}>创作台 · Studio</button>
-                  {u.role === 'ADMIN' && (
-                    <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin-users');}} style={menuItemStyle}>平台管理</button>
-                  )}
-                  <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin-editor', null);}} style={menuItemStyle}>写新文章</button>
-                  <div style={{ height: 1, background: 'var(--border)', margin: '6px 0' }}/>
-                  <button onClick={()=>{
-                    setMenuOpen(false);
-                    window.Auth && window.Auth.logout();
-                    onNav && onNav('auth');
-                  }} style={{...menuItemStyle, color: 'var(--danger)'}}>登出</button>
+                  <span className="paired-label-main" style={{
+                    fontSize: 15,
+                    fontWeight: isActive ? 500 : 400,
+                    color: isActive ? 'var(--ink)' : 'var(--ink-2)',
+                    transition: 'color var(--d-base) var(--ease-out), font-weight var(--d-base) var(--ease-out)',
+                  }}>{item.l}</span>
+                  <span className="paired-label-sub" style={{
+                    fontSize: 12,
+                    color: isActive ? 'var(--ink-3)' : 'var(--ink-4)',
+                    letterSpacing: '0.01em',
+                    transition: 'color var(--d-base) var(--ease-out)',
+                  }}>{item.le}</span>
+                </span>
+              )}
+            />
+          )}
+          <div style={{ flex: 1 }}/>
+          {mobile ? (
+            <>
+              <button
+                type="button"
+                onClick={() => { setMenuOpen(false); setMobileNavOpen(false); setSearchOpen(true); }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 36, height: 36,
+                  background: 'var(--paper-2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '50%',
+                  color: 'var(--ink-3)',
+                  cursor: 'pointer',
+                }}>
+                <Icon name="search" size={16}/>
+              </button>
+              <div onClick={()=>{ if (u) setMenuOpen(v=>!v); else onNav && onNav('auth'); }} style={{ cursor: 'pointer' }}>
+                <Avatar char={initial} size={32} accent={!!u}/>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setMenuOpen(false); setMobileNavOpen(v => !v); }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 36, height: 36,
+                  background: mobileNavOpen ? 'var(--paper-2)' : 'transparent',
+                  border: '1px solid ' + (mobileNavOpen ? 'var(--border-strong)' : 'transparent'),
+                  borderRadius: 8,
+                  color: 'var(--ink-2)',
+                  cursor: 'pointer',
+                  transition: 'all var(--d-fast) var(--ease-out)',
+                }}>
+                <Icon name={mobileNavOpen ? 'x' : 'menu'} size={18}/>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setSearchOpen(true);
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '8px 14px',
+                  background: 'var(--paper-2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--r-pill)',
+                  color: 'var(--ink-4)',
+                  fontFamily: 'var(--serif)',
+                  fontSize: 14,
+                  width: 248,
+                  cursor: 'pointer',
+                  transition: 'background var(--d-fast) var(--ease-out), border-color var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out)',
+                }}>
+                <Icon name="search" size={15}/>
+                <span>搜索文章、作者…</span>
+                <span style={{
+                  marginLeft: 'auto', fontSize: 10.5,
+                  padding: '2px 6px',
+                  border: '1px solid var(--border)',
+                  borderRadius: 4, fontFamily: 'var(--mono)',
+                  whiteSpace: 'nowrap',
+                  letterSpacing: '0.04em',
+                }}>{shortcutLabel}</span>
+              </button>
+              {u ? (
+                <a href="#admin-editor" onClick={e=>{e.preventDefault(); onNav && onNav('admin-editor', null);}}
+                  className="btn btn-ghost" style={{ fontFamily: 'var(--serif)', fontSize: 14 }}>
+                  <Icon name="feather" size={15}/>
+                  写作
+                </a>
+              ) : (
+                <a href="#auth" onClick={e=>{e.preventDefault(); onNav && onNav('auth');}}
+                  className="btn btn-ghost" style={{ fontFamily: 'var(--serif)', fontSize: 14 }}>
+                  登录
+                </a>
+              )}
+              <div style={{ position: 'relative' }}>
+                <div onClick={()=>{ if (u) setMenuOpen(v=>!v); else onNav && onNav('auth'); }} style={{ cursor: 'pointer' }}>
+                  <Avatar char={initial} size={34} accent={!!u}/>
                 </div>
+                {menuOpen && u && (
+                  <>
+                    <div onClick={()=>setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 60 }}/>
+                    <div style={{
+                      position: 'absolute', right: 0, top: 44, zIndex: 70,
+                      minWidth: 220,
+                      background: 'var(--surface)',
+                      border: '1px solid var(--border-strong)',
+                      borderRadius: 'var(--r-md)',
+                      boxShadow: 'var(--shadow-lg)',
+                      padding: 6,
+                    }}>
+                      <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', marginBottom: 6 }}>
+                        <div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div>
+                        <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>@{u.handle}</div>
+                      </div>
+                      <button onClick={()=>{setMenuOpen(false); onNav && onNav('profile');}} style={menuItemStyle}>我的书房</button>
+                      <button onClick={()=>{setMenuOpen(false); onNav && onNav('author', u.handle);}} style={menuItemStyle}>公开作者页</button>
+                      <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin');}} style={menuItemStyle}>创作台 · Studio</button>
+                      {u.role === 'ADMIN' && (
+                        <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin-users');}} style={menuItemStyle}>平台管理</button>
+                      )}
+                      <button onClick={()=>{setMenuOpen(false); onNav && onNav('admin-editor', null);}} style={menuItemStyle}>写新文章</button>
+                      <div style={{ height: 1, background: 'var(--border)', margin: '6px 0' }}/>
+                      <button onClick={()=>{
+                        setMenuOpen(false);
+                        window.Auth && window.Auth.logout();
+                        onNav && onNav('auth');
+                      }} style={{...menuItemStyle, color: 'var(--danger)'}}>登出</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+        {/* Mobile dropdown nav */}
+        {mobile && mobileNavOpen && (
+          <div style={{
+            borderTop: '1px solid var(--border)',
+            padding: '12px 16px',
+            display: 'flex', flexDirection: 'column', gap: 2,
+            background: 'color-mix(in srgb, var(--surface) 95%, transparent)',
+          }}>
+            {[
+              { k: 'home', l: '首页', le: 'Feed' },
+              { k: 'ranking', l: '排行榜', le: 'Rankings' },
+              { k: 'profile', l: '书房', le: 'Study' },
+            ].map(item => (
+              <button key={item.k} onClick={()=>{ setMobileNavOpen(false); onNav && onNav(item.k); }} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '12px 14px',
+                background: active === item.k ? 'var(--paper-2)' : 'transparent',
+                border: 'none',
+                borderRadius: 'var(--r-md)',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontSize: 14,
+                color: active === item.k ? 'var(--ink)' : 'var(--ink-3)',
+                fontWeight: active === item.k ? 500 : 400,
+                textAlign: 'left',
+              }}>
+                <span className="paired-label-main">{item.l}</span>
+                <span className="paired-label-sub" style={{ fontSize: 12, color: 'var(--ink-4)' }}>{item.le}</span>
+              </button>
+            ))}
+            <div style={{ height: 1, background: 'var(--border)', margin: '6px 0' }}/>
+            {u ? (
+              <>
+                <button onClick={()=>{ setMobileNavOpen(false); onNav && onNav('admin-editor', null); }} style={{...menuItemStyle, padding: '12px 14px'}}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Icon name="feather" size={14}/> 写作</span>
+                </button>
+                <button onClick={()=>{ setMobileNavOpen(false); onNav && onNav('admin'); }} style={{...menuItemStyle, padding: '12px 14px'}}>
+                  创作台 · Studio
+                </button>
+                {u.role === 'ADMIN' && (
+                  <button onClick={()=>{ setMobileNavOpen(false); onNav && onNav('admin-users'); }} style={{...menuItemStyle, padding: '12px 14px'}}>
+                    平台管理
+                  </button>
+                )}
+                <div style={{ height: 1, background: 'var(--border)', margin: '6px 0' }}/>
+                <button onClick={()=>{
+                  setMobileNavOpen(false);
+                  window.Auth && window.Auth.logout();
+                  onNav && onNav('auth');
+                }} style={{...menuItemStyle, padding: '12px 14px', color: 'var(--danger)'}}>登出</button>
               </>
+            ) : (
+              <button onClick={()=>{ setMobileNavOpen(false); onNav && onNav('auth'); }} style={{...menuItemStyle, padding: '12px 14px'}}>
+                登录 / 注册
+              </button>
             )}
           </div>
-        </div>
+        )}
+        {/* Mobile user menu dropdown */}
+        {mobile && menuOpen && u && (
+          <>
+            <div onClick={()=>setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 60 }}/>
+            <div style={{
+              position: 'absolute', right: 16, top: 56, zIndex: 70,
+              minWidth: 200,
+              background: 'var(--surface)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 'var(--r-md)',
+              boxShadow: 'var(--shadow-lg)',
+              padding: 6,
+            }}>
+              <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', marginBottom: 6 }}>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>@{u.handle}</div>
+              </div>
+              <button onClick={()=>{setMenuOpen(false); onNav && onNav('profile');}} style={menuItemStyle}>我的书房</button>
+              <button onClick={()=>{setMenuOpen(false); onNav && onNav('author', u.handle);}} style={menuItemStyle}>公开作者页</button>
+              <div style={{ height: 1, background: 'var(--border)', margin: '6px 0' }}/>
+              <button onClick={()=>{
+                setMenuOpen(false);
+                window.Auth && window.Auth.logout();
+                onNav && onNav('auth');
+              }} style={{...menuItemStyle, color: 'var(--danger)'}}>登出</button>
+            </div>
+          </>
+        )}
       </nav>
       <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} onNav={onNav}/>
     </>
@@ -1089,22 +1222,33 @@ const TweaksPanel = ({ state, set, visible, onClose }) => {
     paper:  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M5 7h14M5 11h14M5 15h14M5 19h14" opacity=".5"/></svg>,
   };
 
+  const isMobile = useIsMobile(768);
+
   return (
     <div
       style={{
-        position: 'fixed', top: 88, right: 24, zIndex: 100,
-        width: 320,
+        position: 'fixed',
+        ...(isMobile
+          ? { bottom: 0, left: 0, right: 0, top: 'auto', zIndex: 100, width: '100%', borderRadius: '18px 18px 0 0' }
+          : { top: 88, right: 24, zIndex: 100, width: 320, borderRadius: 18 }),
         background: 'color-mix(in srgb, var(--surface) 90%, transparent)',
         border: '1px solid var(--border-strong)',
-        borderRadius: 18,
-        boxShadow: '0 20px 60px rgba(42, 38, 34, 0.14), 0 2px 8px rgba(42, 38, 34, 0.06)',
-        padding: '18px 18px 14px',
+        boxShadow: isMobile
+          ? '0 -10px 40px rgba(42, 38, 34, 0.14), 0 -2px 8px rgba(42, 38, 34, 0.06)'
+          : '0 20px 60px rgba(42, 38, 34, 0.14), 0 2px 8px rgba(42, 38, 34, 0.06)',
+        padding: isMobile ? '18px 20px 28px' : '18px 18px 14px',
         opacity: show ? 1 : 0,
-        transform: show ? 'translateY(0) scale(1)' : 'translateY(-8px) scale(0.96)',
-        transformOrigin: '90% 0%',
-        transition: 'opacity 280ms var(--ease-out), transform 320ms var(--ease-spring)',
+        transform: show
+          ? 'translateY(0) scale(1)'
+          : (isMobile ? 'translateY(100%) scale(1)' : 'translateY(-8px) scale(0.96)'),
+        transformOrigin: isMobile ? '50% 100%' : '90% 0%',
+        transition: isMobile
+          ? 'opacity 280ms var(--ease-out), transform 360ms var(--ease-spring)'
+          : 'opacity 280ms var(--ease-out), transform 320ms var(--ease-spring)',
         backdropFilter: 'blur(20px) saturate(1.2)',
         WebkitBackdropFilter: 'blur(20px) saturate(1.2)',
+        maxHeight: isMobile ? '80vh' : 'none',
+        overflowY: isMobile ? 'auto' : 'visible',
       }}>
       {/* Header */}
       <div style={{
@@ -1411,9 +1555,31 @@ const renderMd = (src) => {
   return out.filter(Boolean).join('\n');
 };
 
+// ─────────────────────────────────────────────────────────
+// Responsive hook — shared across all pages
+// ─────────────────────────────────────────────────────────
+const useIsMobile = (breakpoint = 768) => {
+  const query = `(max-width: ${breakpoint}px)`;
+  const getMatches = () => typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(query).matches : false;
+  const [matches, setMatches] = React.useState(getMatches);
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+    const media = window.matchMedia(query);
+    const onChange = (e) => setMatches(e.matches);
+    setMatches(media.matches);
+    if (media.addEventListener) media.addEventListener('change', onChange);
+    else media.addListener(onChange);
+    return () => {
+      if (media.removeEventListener) media.removeEventListener('change', onChange);
+      else media.removeListener(onChange);
+    };
+  }, [query]);
+  return matches;
+};
+
 Object.assign(window, {
   ARTICLES, AUTHORS, COMMENTS,
   Icon, Avatar, Cover, TopNav, PageTransition, TweaksPanel, SlidingTabs,
   formatDate, formatRelative, analyzeArticleComposition, adaptArticle, EmptyState, Loading,
-  renderMd,
+  renderMd, useIsMobile,
 });

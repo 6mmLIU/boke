@@ -258,6 +258,7 @@
       const [isDragging, setIsDragging] = useState(false);
       const [snapState, setSnapState] = useState({ edgeX: null, edgeY: null });
       const [snapHint, setSnapHint] = useState({ edgeX: null, edgeY: null });
+      const isMobile = window.useIsMobile ? window.useIsMobile(768) : false;
       const [position, setPosition] = useState(() => {
         try {
           const raw = localStorage.getItem('inkwell.dock.position');
@@ -512,7 +513,16 @@
               transformOrigin: '100% 100%',
               pointerEvents: open ? 'auto' : 'none',
               transition: 'opacity 280ms var(--ease-out), transform 320ms var(--ease-spring)',
-              whiteSpace: 'nowrap',
+              whiteSpace: isMobile ? 'normal' : 'nowrap',
+              ...(isMobile ? {
+                right: 'auto',
+                left: '50%',
+                transform: open ? 'translateX(-50%) translateY(0) scale(1)' : 'translateX(-50%) translateY(8px) scale(0.96)',
+                maxWidth: 'calc(100vw - 32px)',
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+                borderRadius: 18,
+              } : {}),
             }}>
               {items.map((item, index) => {
                 const active = item.k === page;
