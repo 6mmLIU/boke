@@ -1344,8 +1344,10 @@ const renderMd = (src) => {
   // Treat any ATX heading line (# ~ ######) as its own block even when
   // written with just a single newline between the heading and the body —
   // otherwise `### Title\nBody` would render as a plain paragraph.
+  // 中文写作习惯 `#标题` 常省略空格，这里也把紧贴 CJK/全角字符的当作标题。
+  const HEADING_RE_GLOBAL = /(^|\n)(#{1,6}(?:[ \t]+\S|[^\x00-\x7F\s]).*?)(?=\n|$)/g;
   const normalized = src.replace(/\r\n/g, '\n')
-    .replace(/(^|\n)(#{1,6} [^\n]*)(\n|$)/g, '$1\n$2\n$3');
+    .replace(HEADING_RE_GLOBAL, '$1\n$2\n');
   const blocks = normalized.split(/\n{2,}/);
 
   const out = blocks.map((block) => {
@@ -1356,10 +1358,14 @@ const renderMd = (src) => {
     // Horizontal rule
     if (/^(?:-{3,}|_{3,}|\*{3,})\s*$/.test(t)) return '<hr/>';
 
-    // Single-line heading
+    // Single-line heading — allow either `# Title` 或中文写作的 `#标题`。
+    // 对 ASCII 后接 ASCII 的情况仍要求空格，避免 `#hashtag` 这类被当作标题。
     if (lines.length === 1) {
-      const hm = t.match(/^(#{1,6})\s+(.*)$/);
-      if (hm) return `<h${hm[1].length}>${renderInline(hm[2])}</h${hm[1].length}>`;
+      const hm = t.match(/^(#{1,6})(?:[ \t]+(.+)|([^\x00-\x7F\s].*))$/);
+      if (hm) {
+        const body = (hm[2] || hm[3] || '').trim();
+        if (body) return `<h${hm[1].length}>${renderInline(body)}</h${hm[1].length}>`;
+      }
     }
 
     // Blockquote (every line prefixed with >)
