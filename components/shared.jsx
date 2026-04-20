@@ -253,6 +253,7 @@ const SearchModal = ({ open, onClose, onNav }) => {
   const [error, setError] = React.useState('');
   const [activeIndex, setActiveIndex] = React.useState(0);
   const deferredQuery = React.useDeferredValue(query.trim());
+  const mobile = useIsMobile(768);
 
   React.useEffect(() => {
     if (!open) {
@@ -358,7 +359,7 @@ const SearchModal = ({ open, onClose, onNav }) => {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'flex-start',
-        padding: '76px 16px 24px',
+        padding: mobile ? '16px 10px 16px' : '76px 16px 24px',
         background: 'rgba(32, 24, 18, 0.14)',
         backdropFilter: 'blur(16px) saturate(1.08)',
         WebkitBackdropFilter: 'blur(16px) saturate(1.08)',
@@ -366,15 +367,16 @@ const SearchModal = ({ open, onClose, onNav }) => {
       <div
         onMouseDown={(e) => e.stopPropagation()}
         style={{
-          width: 'min(760px, calc(100vw - 32px))',
-          maxHeight: 'min(78vh, 680px)',
+          width: mobile ? '100%' : 'min(760px, calc(100vw - 32px))',
+          maxHeight: mobile ? '100%' : 'min(78vh, 680px)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
           background: 'rgba(250, 246, 241, 0.95)',
-          border: '1px solid rgba(125, 96, 74, 0.14)',
-          borderRadius: 28,
-          boxShadow: '0 28px 90px rgba(40, 30, 22, 0.16), 0 6px 18px rgba(40, 30, 22, 0.08)',
+          border: mobile ? 'none' : '1px solid rgba(125, 96, 74, 0.14)',
+          borderRadius: mobile ? 0 : 28,
+          boxShadow: mobile ? 'none' : '0 28px 90px rgba(40, 30, 22, 0.16), 0 6px 18px rgba(40, 30, 22, 0.08)',
+          height: mobile ? '100%' : 'auto',
         }}>
         <div style={{
           display: 'flex',
@@ -425,7 +427,7 @@ const SearchModal = ({ open, onClose, onNav }) => {
               border: 'none',
               background: 'transparent',
               fontFamily: 'var(--serif)',
-              fontSize: 20,
+              fontSize: mobile ? 16 : 20,
               letterSpacing: '-0.005em',
               color: 'var(--ink)',
               outline: 'none',
@@ -540,7 +542,8 @@ const SearchModal = ({ open, onClose, onNav }) => {
                             boxShadow: selected ? '0 12px 30px rgba(172, 108, 70, 0.12)' : 'var(--shadow-sm)',
                             transition: 'all var(--d-fast) var(--ease-out)',
                           }}>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: mobile ? 10 : 14 }}>
+                            {!mobile && (
                             <div style={{
                               width: 76,
                               height: 62,
@@ -550,6 +553,7 @@ const SearchModal = ({ open, onClose, onNav }) => {
                             }}>
                               <Cover variant={article.cover} height={62} rounded={false}/>
                             </div>
+                            )}
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
                                 {(article.tags || []).slice(0, 3).map((tag) => (

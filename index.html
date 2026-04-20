@@ -450,6 +450,11 @@
         return <div ref={dockRef} style={{ position: 'fixed', right: 24, bottom: 24, opacity: 0, pointerEvents: 'none' }}/>;
       }
 
+      // Hide dock on mobile — TopNav handles navigation
+      if (isMobile) {
+        return null;
+      }
+
       const activeEdgeX = isDragging ? snapHint.edgeX : snapState.edgeX;
       const activeEdgeY = isDragging ? snapHint.edgeY : snapState.edgeY;
       const attachedLeft = activeEdgeX === 'left';

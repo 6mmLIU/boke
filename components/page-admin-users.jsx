@@ -63,7 +63,7 @@ const PageAdminUsers = ({ onNav, user }) => {
             <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--accent)', fontSize: 14, marginBottom: 8 }}>
               — 平台管理 · Platform admin
             </div>
-            <h1 style={{ fontSize: 34, marginBottom: 4 }}>用户与内容总览</h1>
+            <h1 style={{ fontSize: mobile ? 26 : 34, marginBottom: 4 }}>用户与内容总览</h1>
             <div style={{ color: 'var(--ink-4)' }}>查看所有注册用户、最近文章与封禁状态</div>
           </div>
 
@@ -111,7 +111,7 @@ const PageAdminUsers = ({ onNav, user }) => {
               <div key={item.id} className="card fade-up" style={{ padding: 24, animationDelay: index * 40 + 'ms' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexDirection: mobile ? 'column' : 'row' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
                       <div style={{
                         width: 40,
                         height: 40,
@@ -168,7 +168,7 @@ const PageAdminUsers = ({ onNav, user }) => {
                           {item.recentArticles.map((article) => (
                             <div key={article.id} style={{
                               display: 'grid',
-                              gridTemplateColumns: '1fr auto',
+                              gridTemplateColumns: mobile ? '1fr' : '1fr auto',
                               gap: 10,
                               alignItems: 'center',
                               padding: '12px 14px',

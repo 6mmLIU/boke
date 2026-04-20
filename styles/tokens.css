@@ -217,10 +217,12 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color var(--d-base) var(--ease-out), color var(--d-base) var(--ease-out);
+  overflow-x: hidden;
 }
 
 body {
   position: relative;
+  min-width: 0;
 }
 
 #root {
@@ -1159,5 +1161,57 @@ html[data-theme-animating="true"] *::after {
   .reading-actions {
     width: min(calc(100vw - 16px), 560px);
     justify-content: center;
+  }
+}
+
+
+/* ─────────────────────────────────────────────────────────
+   Mobile-specific refinements (≤ 768px)
+   Ensures no horizontal overflow and elegant touch layouts.
+───────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  html, body, #root {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  /* Tighter buttons on mobile */
+  .btn {
+    padding: 9px 14px;
+    font-size: 13px;
+  }
+
+  /* Cards: slightly less radius for tighter feel */
+  .card {
+    border-radius: var(--r-md);
+  }
+
+  /* Reading subtitle: allow wrapping */
+  .reading-subtitle {
+    max-width: none;
+  }
+
+  /* Reading actions: full-width pill at bottom */
+  .reading-actions {
+    bottom: 12px;
+    width: calc(100vw - 24px);
+    max-width: 400px;
+  }
+
+  /* Article prose images: tighter radius */
+  .article-prose .md-fig img {
+    border-radius: 10px;
+  }
+
+  /* Scrollbar: hide on mobile for cleaner look */
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  /* Tags: slightly smaller */
+  .tag {
+    padding: 2px 8px;
+    font-size: 11px;
   }
 }

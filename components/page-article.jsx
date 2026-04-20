@@ -1,4 +1,4 @@
-/* global React, Icon, Avatar, Cover, TopNav, EmptyState, Loading, formatDate, formatRelative, analyzeArticleComposition, adaptArticle, renderMd */
+/* global React, Icon, Avatar, Cover, TopNav, EmptyState, Loading, formatDate, formatRelative, analyzeArticleComposition, adaptArticle, renderMd, useIsMobile */
 
 const PageArticle = ({ onNav, articleId, user }) => {
   const [article, setArticle] = React.useState(null);
@@ -10,6 +10,7 @@ const PageArticle = ({ onNav, articleId, user }) => {
   const [bookmarked, setBookmarked] = React.useState(false);
   const [bookmarkBusy, setBookmarkBusy] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
+  const mobile = typeof useIsMobile !== 'undefined' ? useIsMobile(768) : false;
 
   const [comments, setComments] = React.useState([]);
   const [commentsLoading, setCommentsLoading] = React.useState(false);
@@ -167,13 +168,15 @@ const PageArticle = ({ onNav, articleId, user }) => {
 
   const a = article;
   const bodyHtml = renderMd(a.content || '');
-  const coverHeight = composition.shape === 'visual'
-    ? 420
-    : composition.shape === 'longform'
-      ? 300
-      : composition.shape === 'brief'
-        ? 340
-        : 360;
+  const coverHeight = mobile
+    ? (composition.shape === 'visual' ? 220 : 180)
+    : composition.shape === 'visual'
+      ? 420
+      : composition.shape === 'longform'
+        ? 300
+        : composition.shape === 'brief'
+          ? 340
+          : 360;
 
   return (
     <div className="reading-stage" data-reading-profile={composition.shape}>
@@ -275,8 +278,8 @@ const PageArticle = ({ onNav, articleId, user }) => {
         </div>
 
         {/* Comments */}
-        <div style={{ maxWidth: 'var(--reading-inline)', margin: '72px auto 0' }}>
-          <h2 style={{ fontSize: 28, marginBottom: 8 }}>读者笔谈</h2>
+        <div style={{ maxWidth: 'var(--reading-inline)', margin: mobile ? '48px auto 0' : '72px auto 0' }}>
+          <h2 style={{ fontSize: mobile ? 22 : 28, marginBottom: 8 }}>读者笔谈</h2>
           <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', color: 'var(--ink-4)', marginBottom: 28 }}>
             {comments.length} Conversations
           </div>

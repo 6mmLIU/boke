@@ -1,4 +1,4 @@
-/* global React, Auth, Icon */
+/* global React, Auth, Icon, useIsMobile */
 
 // ─────────────────────────────────────────────────────────
 // Login / Register page — real API
@@ -33,6 +33,7 @@ const Field = ({ name, label, type = 'text', placeholder, value, onChange, focus
 const PageAuth = ({ onNav }) => {
   const [mode, setMode] = React.useState('login'); // 'login' | 'register' | 'forgot'
   const [focused, setFocused] = React.useState(null);
+  const mobile = typeof useIsMobile !== 'undefined' ? useIsMobile(768) : false;
   const [values, setValues] = React.useState({
     email: '',
     password: '',
@@ -185,9 +186,10 @@ const PageAuth = ({ onNav }) => {
 
   return (
     <div style={{
-      minHeight: '100vh', display: 'grid', gridTemplateColumns: '1fr 1fr',
+      minHeight: '100vh', display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr',
       background: 'var(--paper)',
     }}>
+      {!mobile && (
       <div style={{
         position: 'relative', overflow: 'hidden',
         background: 'linear-gradient(160deg, var(--accent-wash) 0%, var(--paper-2) 50%, var(--paper) 100%)',
@@ -223,12 +225,29 @@ const PageAuth = ({ onNav }) => {
           <div><b style={{ fontFamily: 'var(--serif)', fontSize: 22, color: 'var(--ink)' }}>2.1 M</b><br/>字</div>
         </div>
       </div>
+      )}
 
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '48px',
+        padding: mobile ? '32px 20px' : '48px',
+        minHeight: mobile ? '100vh' : 'auto',
       }}>
         <div style={{ width: '100%', maxWidth: 380 }}>
+          {mobile && (
+            <div style={{ textAlign: 'center', marginBottom: 32 }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontFamily: 'var(--serif)', fontSize: 20, marginBottom: 16 }}>
+                <span style={{
+                  width: 36, height: 36, borderRadius: 8,
+                  background: 'var(--accent)', color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
+                }}>砚</span>
+                <span>Inkwell</span>
+              </div>
+              <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)' }}>
+                A quiet place for slow writing.
+              </div>
+            </div>
+          )}
           <div style={{
             display: 'inline-flex', position: 'relative',
             background: 'var(--paper-2)', borderRadius: 'var(--r-pill)',
