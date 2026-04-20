@@ -334,22 +334,101 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
         {/* Top bar */}
         <div style={{
-          padding: '14px 32px',
+          padding: '18px 40px',
           borderBottom: '1px solid var(--border)',
-          background: 'var(--surface)',
-          display: 'flex', alignItems: 'center', gap: 16,
+          background: 'linear-gradient(180deg, var(--surface) 0%, color-mix(in srgb, var(--surface) 94%, transparent) 100%)',
+          display: 'flex', alignItems: 'center', gap: 20,
         }}>
-          <button className="btn btn-ghost" onClick={()=>onNav('admin-articles')} style={{ padding: '8px 12px' }}>
-            ← 文章
+          <button
+            onClick={()=>onNav('admin-articles')}
+            onMouseEnter={(e)=>{ e.currentTarget.style.color = 'var(--ink)'; e.currentTarget.style.transform = 'translateX(-2px)'; }}
+            onMouseLeave={(e)=>{ e.currentTarget.style.color = 'var(--ink-3)'; e.currentTarget.style.transform = 'translateX(0)'; }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: '6px 10px 6px 0',
+              cursor: 'pointer',
+              color: 'var(--ink-3)',
+              fontFamily: 'var(--serif)',
+              fontSize: 14,
+              letterSpacing: '0.01em',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              transition: 'color var(--d-fast) var(--ease-out), transform var(--d-fast) var(--ease-out)',
+            }}>
+            <span style={{ fontSize: 18, lineHeight: 1 }}>←</span> 文章
           </button>
-          <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-            {isEdit ? '编辑文章' : '新建文章'}
+          <div style={{
+            width: 1,
+            height: 22,
+            background: 'var(--border-strong)',
+            opacity: 0.7,
+          }}/>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+            <div style={{
+              fontFamily: 'var(--serif)',
+              fontSize: 22,
+              fontWeight: 500,
+              letterSpacing: '-0.015em',
+              color: 'var(--ink)',
+              lineHeight: 1.15,
+            }}>
+              {isEdit ? '编辑文章' : '新建文章'}
+            </div>
+            <div style={{
+              fontFamily: 'var(--serif)',
+              fontStyle: 'italic',
+              fontSize: 12,
+              color: 'var(--ink-4)',
+              letterSpacing: '0.01em',
+            }}>
+              {isEdit ? '— Refining a draft' : '— A new page'}
+            </div>
           </div>
           <div style={{ flex: 1 }}/>
-          <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
-            {uploadingImage ? '图片上传中…' : `${wordCount} 字 · 约 ${est} 分钟`}
+          <div style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: 8,
+            color: 'var(--ink-4)',
+            fontFamily: 'var(--serif)',
+            fontSize: 13,
+            letterSpacing: '0.01em',
+          }}>
+            {uploadingImage ? (
+              <span style={{ fontStyle: 'italic', color: 'var(--accent-deep)' }}>图片上传中…</span>
+            ) : (
+              <>
+                <span style={{ color: 'var(--ink-2)', fontSize: 15 }}>{wordCount}</span>
+                <span>字</span>
+                <span style={{ color: 'var(--ink-5)' }}>·</span>
+                <span style={{ fontStyle: 'italic' }}>约 {est} 分钟</span>
+              </>
+            )}
           </div>
-          <button className="btn btn-primary" onClick={onPublish} disabled={publishing}>
+          <button
+            onClick={onPublish}
+            disabled={publishing}
+            onMouseEnter={(e)=>{ if (!publishing) { e.currentTarget.style.boxShadow = '0 10px 24px color-mix(in srgb, var(--accent) 28%, transparent), 0 2px 6px color-mix(in srgb, var(--accent) 14%, transparent)'; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
+            onMouseLeave={(e)=>{ e.currentTarget.style.boxShadow = '0 4px 14px color-mix(in srgb, var(--accent) 22%, transparent), 0 1px 3px color-mix(in srgb, var(--accent) 10%, transparent)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+            style={{
+              padding: '11px 26px',
+              border: 'none',
+              borderRadius: 999,
+              background: publishing
+                ? 'color-mix(in srgb, var(--accent) 55%, var(--ink-4))'
+                : 'linear-gradient(140deg, var(--accent) 0%, var(--accent-deep) 100%)',
+              color: '#fff',
+              fontFamily: 'var(--serif)',
+              fontSize: 15,
+              letterSpacing: '0.04em',
+              fontWeight: 500,
+              cursor: publishing ? 'wait' : 'pointer',
+              opacity: publishing ? 0.75 : 1,
+              boxShadow: '0 4px 14px color-mix(in srgb, var(--accent) 22%, transparent), 0 1px 3px color-mix(in srgb, var(--accent) 10%, transparent)',
+              transition: 'box-shadow var(--d-base) var(--ease-out), transform var(--d-base) var(--ease-out), background var(--d-base) var(--ease-out)',
+            }}>
             {publishing ? '保存中…' : (isEdit ? '更新' : '发布')}
           </button>
         </div>
@@ -579,26 +658,8 @@ const PageAdminEditor = ({ onNav, articleId, user }) => {
                 dangerouslySetInnerHTML={{ __html: renderMd(content) }}/>
             </div>
             <style>{`
-              /* ── Custom ink caret ── */
-              .editor-ta-hide-caret { caret-color: transparent; }
-
-              /* Idle: gentle breathing blink */
-              @keyframes inkBreath {
-                0%, 100% { opacity: 1; }
-                50% { opacity: 0.2; }
-              }
-
-              .ink-caret {
-                animation: inkBreath 1.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-                box-shadow: 0 0 6px 1px var(--accent-wash);
-              }
-
-              /* While typing: stay solid, no blink, subtle glow */
-              .ink-caret--typing {
-                animation: none;
-                opacity: 1;
-                box-shadow: 0 0 8px 2px var(--accent-wash), 0 0 3px 0 var(--accent-soft);
-              }
+              .editor-ta::selection { background: var(--accent-wash); }
+              .editor-ta::placeholder { color: var(--ink-4); font-style: italic; }
             `}</style>
           </div>
         </div>

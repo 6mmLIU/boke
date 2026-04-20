@@ -424,7 +424,9 @@ const SearchModal = ({ open, onClose, onNav }) => {
               flex: 1,
               border: 'none',
               background: 'transparent',
-              fontSize: 18,
+              fontFamily: 'var(--serif)',
+              fontSize: 20,
+              letterSpacing: '-0.005em',
               color: 'var(--ink)',
               outline: 'none',
             }}
@@ -440,7 +442,14 @@ const SearchModal = ({ open, onClose, onNav }) => {
           }}>Esc</span>
         </div>
 
-        <div style={{ padding: '12px 20px 0', color: 'var(--ink-4)', fontSize: 12 }}>
+        <div style={{
+          padding: '12px 20px 0',
+          color: 'var(--ink-4)',
+          fontSize: 13,
+          fontFamily: 'var(--serif)',
+          fontStyle: 'italic',
+          letterSpacing: '0.005em',
+        }}>
           {hasQuery
             ? 'Enter 打开当前结果，方向键切换命中项。'
             : '可搜索标题、摘要、标签、作者名与 @handle。'}
@@ -459,8 +468,19 @@ const SearchModal = ({ open, onClose, onNav }) => {
                 { title: '即时打开', text: '搜索结果可直接跳文章页或作者主页。' },
               ].map((item) => (
                 <div key={item.title} className="card" style={{ padding: '18px 18px 16px' }}>
-                  <div style={{ fontSize: 15, marginBottom: 6, color: 'var(--ink)' }}>{item.title}</div>
-                  <div style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--ink-3)' }}>{item.text}</div>
+                  <div style={{
+                    fontFamily: 'var(--serif)',
+                    fontSize: 17,
+                    letterSpacing: '-0.005em',
+                    marginBottom: 6,
+                    color: 'var(--ink)',
+                  }}>{item.title}</div>
+                  <div style={{
+                    fontFamily: 'var(--serif)',
+                    fontSize: 13.5,
+                    lineHeight: 1.75,
+                    color: 'var(--ink-3)',
+                  }}>{item.text}</div>
                 </div>
               ))}
             </div>
@@ -1321,7 +1341,12 @@ const renderMd = (src) => {
     return t;
   };
 
-  const blocks = src.replace(/\r\n/g, '\n').split(/\n{2,}/);
+  // Treat any ATX heading line (# ~ ######) as its own block even when
+  // written with just a single newline between the heading and the body —
+  // otherwise `### Title\nBody` would render as a plain paragraph.
+  const normalized = src.replace(/\r\n/g, '\n')
+    .replace(/(^|\n)(#{1,6} [^\n]*)(\n|$)/g, '$1\n$2\n$3');
+  const blocks = normalized.split(/\n{2,}/);
 
   const out = blocks.map((block) => {
     const lines = block.split('\n');
