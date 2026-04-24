@@ -92,6 +92,12 @@
       });
     },
 
+    async sendResetCode({ email }) {
+      return request('/api/auth/send-reset-code', {
+        method: 'POST', body: { email },
+      });
+    },
+
     async register({ email, password, name, code }) {
       const data = await request('/api/auth/register', {
         method: 'POST', body: { email, password, name, code },
@@ -106,6 +112,12 @@
       });
       setAuth(data.token, data.user);
       return data.user;
+    },
+
+    async resetPassword({ email, code, password }) {
+      return request('/api/auth/reset-password', {
+        method: 'POST', body: { email, code, password },
+      });
     },
 
     async refresh() {
@@ -161,6 +173,10 @@
     bookmarks: () => request('/api/users/me/bookmarks'),
   };
 
+  const Search = {
+    query: (params = {}) => request('/api/search', { query: params }),
+  };
+
   const Uploads = {
     image: ({ dataUrl, filename }) => request('/api/uploads/images', {
       method: 'POST',
@@ -179,6 +195,6 @@
     unbanUser: (id) => request(`/api/admin/users/${id}/unban`, { method: 'PATCH' }),
   };
 
-  global.API = { request, Articles, Comments, Users, Uploads, Admin, base: API_BASE };
+  global.API = { request, Articles, Comments, Users, Uploads, Admin, Search, base: API_BASE };
   global.Auth = Auth;
 })(window);

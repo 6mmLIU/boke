@@ -378,6 +378,7 @@ router.get('/users', authenticate, ensureAdmin, async (req, res, next) => {
 
     const limitNum = Math.max(1, Math.min(50, parseInt(limit)));
     const keyword = String(q || '').trim();
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const where = keyword ? {
       OR: [
         { name: { contains: keyword, mode: 'insensitive' } },
@@ -386,33 +387,59 @@ router.get('/users', authenticate, ensureAdmin, async (req, res, next) => {
       ],
     } : {};
 
-    const users = await prisma.user.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: limitNum,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        handle: true,
-        previousHandle: true,
-        bio: true,
-        avatar: true,
-        role: true,
-        isBanned: true,
-        bannedAt: true,
-        bannedReason: true,
-        handleChangedAt: true,
-        createdAt: true,
-        _count: {
-          select: {
-            articles: true,
-            comments: true,
-            followers: true,
+    const [
+      users,
+      totalUsers,
+      newUsers7d,
+      bannedUsers,
+      admins,
+      totalArticles,
+      totalViewsAggregate,
+      totalLikes,
+      totalComments,
+      totalFollowers,
+    ] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limitNum,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          handle: true,
+          previousHandle: true,
+          bio: true,
+          avatar: true,
+          role: true,
+          isBanned: true,
+          bannedAt: true,
+          bannedReason: true,
+          handleChangedAt: true,
+          createdAt: true,
+          _count: {
+            select: {
+              articles: true,
+              comments: true,
+              followers: true,
+            },
           },
         },
-      },
-    });
+      }),
+      prisma.user.count(),
+      prisma.user.count({
+        where: {
+          createdAt: { gte: sevenDaysAgo },
+        },
+      }),
+      prisma.user.count({ where: { isBanned: true } }),
+      prisma.user.count({ where: { role: 'ADMIN' } }),
+      prisma.article.count(),
+      prisma.article.aggregate({ _sum: { views: true } }),
+      prisma.like.count(),
+      prisma.comment.count(),
+      prisma.follow.count(),
+    ]);
 
     const enrichedUsers = await Promise.all(users.map(async (user) => {
       const [viewsAggregate, likesCount, commentsCount, recentArticles] = await Promise.all([
@@ -482,10 +509,16 @@ router.get('/users', authenticate, ensureAdmin, async (req, res, next) => {
     res.json({
       users: enrichedUsers,
       summary: {
-        totalUsers: enrichedUsers.length,
-        totalArticles: enrichedUsers.reduce((sum, user) => sum + user.stats.articles, 0),
-        bannedUsers: enrichedUsers.filter((user) => user.isBanned).length,
-        admins: enrichedUsers.filter((user) => user.role === 'ADMIN').length,
+        totalUsers,
+        newUsers7d,
+        totalArticles,
+        totalViews: totalViewsAggregate._sum.views ?? 0,
+        totalLikes,
+        totalComments,
+        totalFollowers,
+        bannedUsers,
+        admins,
+        displayedUsers: enrichedUsers.length,
       },
     });
   } catch (error) {

@@ -24,21 +24,42 @@ const getTransporter = () => {
   return cachedTransporter;
 };
 
-const sendVerificationCode = async (email, code) => {
-  const subject = `【砚 Inkwell】您的验证码:${code}`;
+const buildVerificationCopy = (purpose, code) => {
+  if (purpose === 'reset') {
+    return {
+      subject: `【砚 Inkwell】您的重置密码验证码:${code}`,
+      title: '您的重置密码验证码',
+      lead: '您正在重置砚 Inkwell 账户密码。',
+      footer: '如果不是您本人发起的重置请求,请忽略此邮件并尽快检查账户安全。',
+    };
+  }
+
+  return {
+    subject: `【砚 Inkwell】您的注册验证码:${code}`,
+    title: '您的注册验证码',
+    lead: '您正在注册砚 Inkwell 账户。',
+    footer: '如果不是您本人操作,请忽略此邮件。',
+  };
+};
+
+const sendVerificationCode = async (email, code, options = {}) => {
+  const purpose = options.purpose === 'reset' ? 'reset' : 'register';
+  const copy = buildVerificationCopy(purpose, code);
+  const subject = copy.subject;
   const html = `
     <div style="font-family: -apple-system, 'Helvetica Neue', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #fdfbf6; border-radius: 12px;">
       <div style="font-size: 22px; color: #2a2622; margin-bottom: 8px;">砚 Inkwell</div>
       <div style="color: #6b6b6b; font-size: 14px; margin-bottom: 24px;">A quiet place for slow writing.</div>
       <div style="background: #fff; border: 1px solid #e8e2d6; border-radius: 8px; padding: 24px; text-align: center;">
-        <div style="color: #6b6b6b; font-size: 13px; margin-bottom: 12px;">您的注册验证码</div>
+        <div style="color: #6b6b6b; font-size: 13px; margin-bottom: 12px;">${copy.title}</div>
         <div style="font-size: 36px; letter-spacing: 8px; color: #c5704a; font-weight: 600; font-family: 'SF Mono', Monaco, monospace;">${code}</div>
-        <div style="color: #999; font-size: 12px; margin-top: 16px;">10 分钟内有效,请勿向他人透露。</div>
+        <div style="color: #666; font-size: 13px; margin-top: 16px;">${copy.lead}</div>
+        <div style="color: #999; font-size: 12px; margin-top: 12px;">10 分钟内有效,请勿向他人透露。</div>
       </div>
-      <div style="color: #999; font-size: 12px; margin-top: 20px; text-align: center;">如果不是您本人操作,请忽略此邮件。</div>
+      <div style="color: #999; font-size: 12px; margin-top: 20px; text-align: center;">${copy.footer}</div>
     </div>
   `;
-  const text = `您的砚 Inkwell 注册验证码是: ${code}\n\n该验证码 10 分钟内有效,请勿向他人透露。\n如果不是您本人操作,请忽略此邮件。`;
+  const text = `${copy.title}: ${code}\n\n${copy.lead}\n该验证码 10 分钟内有效,请勿向他人透露。\n${copy.footer}`;
 
   const from = process.env.SMTP_FROM || `"砚 Inkwell" <${process.env.SMTP_USER}>`;
 

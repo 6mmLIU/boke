@@ -67,7 +67,7 @@ router.post('/send-code', async (req, res, next) => {
       },
     });
 
-    await sendVerificationCode(email, code);
+    await sendVerificationCode(email, code, { purpose: 'register' });
 
     res.json({
       message: '验证码已发送,请查收邮件',
@@ -83,10 +83,69 @@ router.post('/send-code', async (req, res, next) => {
   }
 });
 
+// @POST /api/auth/send-reset-code
+// @desc 发送重置密码验证码
+router.post('/send-reset-code', async (req, res, next) => {
+  try {
+    const { email } = sendCodeSchema.parse(req.body);
+
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return res.json({
+        message: '如果该邮箱已注册,重置验证码已发送,请查收邮件',
+        expiresIn: CODE_TTL_MS / 1000,
+        devMode: !smtpConfigured(),
+      });
+    }
+
+    const recent = await prisma.emailVerificationCode.findFirst({
+      where: { email, purpose: 'reset' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (recent && Date.now() - recent.createdAt.getTime() < RESEND_COOLDOWN_MS) {
+      const wait = Math.ceil((RESEND_COOLDOWN_MS - (Date.now() - recent.createdAt.getTime())) / 1000);
+      return res.status(429).json({ error: `请等待 ${wait} 秒后再试` });
+    }
+
+    const code = generateCode();
+    await prisma.emailVerificationCode.create({
+      data: {
+        email,
+        code,
+        purpose: 'reset',
+        expiresAt: new Date(Date.now() + CODE_TTL_MS),
+      },
+    });
+
+    await sendVerificationCode(email, code, { purpose: 'reset' });
+
+    res.json({
+      message: '重置验证码已发送,请查收邮件',
+      expiresIn: CODE_TTL_MS / 1000,
+      devMode: !smtpConfigured(),
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: '验证失败', details: error.errors });
+    }
+    next(error);
+  }
+});
+
 // 登录验证schema
 const loginSchema = z.object({
   email: z.string().email('请输入有效的邮箱地址'),
   password: z.string().min(1, '密码不能为空'),
+});
+
+const resetPasswordSchema = z.object({
+  email: z.string().email('请输入有效的邮箱地址'),
+  code: z.string().regex(/^\d{6}$/, '请输入 6 位数字验证码'),
+  password: z.string().min(8, '密码至少需要8个字符'),
 });
 
 // @POST /api/auth/register
@@ -209,6 +268,65 @@ router.post('/login', async (req, res, next) => {
       token,
       user: userInfo,
     });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: '验证失败',
+        details: error.errors,
+      });
+    }
+    next(error);
+  }
+});
+
+// @POST /api/auth/reset-password
+// @desc 通过邮箱验证码重置密码
+router.post('/reset-password', async (req, res, next) => {
+  try {
+    const { email, code, password } = resetPasswordSchema.parse(req.body);
+
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: '账户不存在' });
+    }
+
+    const codeRow = await prisma.emailVerificationCode.findFirst({
+      where: { email, purpose: 'reset', used: false },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!codeRow) {
+      return res.status(400).json({ error: '请先获取重置验证码' });
+    }
+    if (codeRow.expiresAt.getTime() < Date.now()) {
+      return res.status(400).json({ error: '验证码已过期,请重新获取' });
+    }
+    if (codeRow.code !== code) {
+      return res.status(400).json({ error: '验证码错误' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { password: hashedPassword },
+      });
+
+      await tx.emailVerificationCode.updateMany({
+        where: {
+          email,
+          purpose: 'reset',
+          used: false,
+        },
+        data: { used: true },
+      });
+    });
+
+    res.json({ message: '密码已重置,请使用新密码登录' });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({

@@ -12,6 +12,7 @@ const commentRoutes = require('./routes/comments');
 const adminRoutes = require('./routes/admin');
 const userRoutes = require('./routes/users');
 const uploadRoutes = require('./routes/uploads');
+const searchRoutes = require('./routes/search');
 
 const app = express();
 
@@ -60,6 +61,9 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
+app.use('/api/auth/send-code', authLimiter);
+app.use('/api/auth/send-reset-code', authLimiter);
+app.use('/api/auth/reset-password', authLimiter);
 
 // API路由
 app.use('/api/auth/oauth', oauthRoutes);  // 在 authRoutes 前注册,避免被它的子路由吃掉
@@ -69,6 +73,7 @@ app.use('/api/comments', commentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/uploads', uploadRoutes);
+app.use('/api/search', searchRoutes);
 
 // 健康检查
 app.get('/api/health', (req, res) => {
